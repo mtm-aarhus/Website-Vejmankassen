@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <link rel="icon" href="{{ url_for('static', filename='favicon-32x32.png') }}" sizes="32x32" type="image/png">
+    <title>Vejmankassen - {{ page_title }}</title>
+    {% include 'common.html' %}
+</head>
+<body class="container-fluid mt-2">
+    <!-- Main Title with Logo -->
+    <img src="{{ url_for('static', filename='aak-logo.svg') }}" alt="AAK Logo" class="logo" style="position: absolute; top: 10px; right: 10px;">
+
+    <header>
+        <h1 class="mb-2">Vejmankassen</h1>
+    </header>
+    <div class="divider"></div> <!-- Divider directly below the title -->
+
+    <br>
+
+    <!-- Page-Specific Navigation with Active Highlight -->
+    <nav class="mb-3">
+        <a href="/" class="{% if active_page == 'ikke-faktureret' %}active{% endif %}">Ikke Faktureret</a> | 
+        <a href="/til-fakturering" class="{% if active_page == 'til-fakturering' %}active{% endif %}">Til Fakturering</a> | 
+        <a href="/faktureret" class="{% if active_page == 'faktureret' %}active{% endif %}">Faktureret</a> | 
+        <a href="/add" class="{% if active_page == 'add' %}active{% endif %}">Tilføj faktura</a>
+    </nav>
+
+    {% include 'table.html' %}
+</body>
+</html>

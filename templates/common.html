@@ -1,0 +1,372 @@
+<!-- common.html -->
+
+<!-- hosted css/js:
+<link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+<link rel="stylesheet" href="https://cdn.datatables.net/1.10.21/css/jquery.dataTables.min.css">
+<script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.datatables.net/1.10.21/js/jquery.dataTables.min.js"></script>
+<script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+<link rel="stylesheet" href="https://code.jquery.com/ui/1.12.1/themes/smoothness/jquery-ui.css">
+<script src="https://code.jquery.com/ui/1.12.1/jquery-ui.js"></script> 
+-->
+
+<!-- Local CSS -->
+<link rel="stylesheet" href="{{ url_for('static', filename='css/bootstrap.min.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/jquery.dataTables.min.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/jquery-ui.min.css') }}">
+
+<!-- Local JS -->
+<script src="{{ url_for('static', filename='js/jquery-3.5.1.min.js') }}"></script>
+<script src="{{ url_for('static', filename='js/bootstrap.min.js') }}"></script>
+<script src="{{ url_for('static', filename='js/jquery.dataTables.min.js') }}"></script>
+<script src="{{ url_for('static', filename='js/jquery-ui.min.js') }}"></script>
+
+
+<style>
+    
+    body { margin: 10px; }
+    .container-fluid { padding: 0 15px; }
+    .table-responsive {
+    width: 100%; /* Make sure the container takes full width */
+}
+    header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start; /* Align items at the start */
+        }
+    h1 {
+        font-family: Arial, sans-serif;
+        font-weight: bold;
+        font-size: clamp(1.5rem, 3vw, 2.5rem); /* Dynamic font size */
+        margin-bottom: 0;
+    }
+    .active {
+        font-weight: bold;
+        color: #007bff; /* Bootstrap primary color */
+        text-decoration: underline;
+    }
+    .logo {
+        width: 10%; /* Adjust the width of the logo as needed */
+        height: auto;
+    }
+    .divider {
+        height: 3px;
+        width: 40%; /* 40% of the title's width */
+        background-color: #000000;
+    }
+
+    .table {
+        width: 100%; /* Make the table take the full width of its container */
+        max-width: 99%; /* Ensure the table does not exceed the width of its container */
+        table-layout: auto; /* Adjust column widths automatically */
+        font-size: 0.875rem; /* Keep the font size */
+    }
+
+    .editable { cursor: pointer; }
+    .non-editable { }
+</style>
+
+<script>
+$(document).ready(function() {
+    // Check if DataTable is already initialized
+    if (!$.fn.DataTable.isDataTable('#table')) {
+        var table = $('#table').DataTable({
+            responsive: true,
+            search: { smart: true },
+            pageLength: 10,
+            lengthMenu: [[10, 25, 50, 100, -1], [10, 25, 50, 100, "Alle"]], // Add "All" option
+            columnDefs: [
+                { targets: [8, 9, 10, 11], orderable: false } // Disable sorting for Startdato (8), Slutdato (9), Dage (10), and Pris (11)
+            ],
+            language: {
+                    "decimal": ",",
+                    "thousands": ".",
+                    "search": "Søg:",
+                    "lengthMenu": "Vis _MENU_ poster",
+                    "info": "Viser _START_ til _END_ ud af _TOTAL_ fakturaer",
+                    "infoEmpty": "Viser 0 til 0 af 0 poster",
+                    "infoFiltered": "(filtreret fra _MAX_ fakturaer)",
+                    "loadingRecords": "Indlæser...",
+                    "zeroRecords": "Ingen matchende fakturaer fundet",
+                    "emptyTable": "Ingen data tilgængelig i tabellen",
+                    "paginate": {
+                        "first": "Første",
+                        "previous": "Forrige",
+                        "next": "Næste",
+                        "last": "Sidste"
+                    },
+                    "aria": {
+                        "sortAscending": ": aktiver for at sortere kolonnen stigende",
+                        "sortDescending": ": aktiver for at sortere kolonnen faldende"
+                    }
+                }
+        });
+
+
+        // Recalculate TotalPris and AntalDage when the table is redrawn
+        table.on('draw', function() {
+            $('tbody tr').each(function() {
+                updateRowCalculations($(this));
+            });
+            calculateTotalSum(); // Calculate the total sum
+            initializeDatePickers(); // Re-initialize the datepickers
+        });
+    }
+
+     // Initial datepicker initialization
+    initializeDatePickers();
+
+    $.datepicker.regional['da'] = {
+            closeText: "Luk",
+            prevText: "Forrige",
+            nextText: "Næste",
+            currentText: "I dag",
+            monthNames: [ "Januar", "Februar", "Marts", "April", "Maj", "Juni",
+                          "Juli", "August", "September", "Oktober", "November", "December" ],
+            monthNamesShort: [ "Jan", "Feb", "Mar", "Apr", "Maj", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dec" ],
+            dayNames: [ "Søndag", "Mandag", "Tirsdag", "Onsdag", "Torsdag", "Fredag", "Lørdag" ],
+            dayNamesShort: [ "Søn", "Man", "Tir", "Ons", "Tor", "Fre", "Lør" ],
+            dayNamesMin: [ "Sø", "Ma", "Ti", "On", "To", "Fr", "Lø" ],
+            weekHeader: "Uge",
+            dateFormat: "dd-mm-yy",
+            firstDay: 1, // Monday as the first day of the week
+            isRTL: false,
+            showMonthAfterYear: false,
+            yearSuffix: ""
+        };
+        $.datepicker.setDefaults($.datepicker.regional['da']); // Apply Danish settings
+
+    // Function to initialize datepickers
+    function initializeDatePickers() {
+        try {
+            $('.date-picker').datepicker({
+                dateFormat: 'dd-mm-yy',
+                firstDay: 1, // Set Monday as the first day
+                onSelect: function() {
+                    updateRowCalculations($(this).closest('tr')); // Trigger calculation on date change
+                    calculateTotalSum(); // Calculate the total sum
+                }
+            });
+        } catch (error) {
+            console.error("Error initializing date pickers:", error);
+        }
+    }
+
+    // Use event delegation to handle double-click events for editable fields
+    $('tbody').on('dblclick', '.editable', function() {
+        var currentElement = $(this);
+        var currentText = currentElement.text().trim();
+        var inputField = $('<input type="text" class="editable-input" />')
+            .val(currentText)
+            .blur(function() {
+                var newText = $(this).val().trim();
+                currentElement.text(newText);
+                $(this).remove(); // Remove the input field on blur
+                updateRowCalculations(currentElement.closest('tr')); // Trigger calculation after editing
+                calculateTotalSum(); // Calculate the total sum
+            })
+            .keypress(function(event) {
+                if (event.which === 13) { // Enter key
+                    $(this).blur(); // Trigger blur event to save changes
+                }
+            });
+        currentElement.empty().append(inputField);
+        inputField.focus();
+    });
+
+    // Use event delegation to handle "Save" button click
+    $('tbody').on('click', '.btn-primary', function() {
+        updateRow(this);
+    });
+
+    $('tbody').on('click', '.btn-danger', function() {
+        deleteRow(this);
+    });
+
+
+    // Use event delegation to handle "Add" button click for inserting rows
+    $('#add-row-button').on('click', function(e) {
+        e.preventDefault(); // Prevent default form submission
+        insertRow('#add-row-form'); // Call the insertRow function
+    });
+
+    function formatNumber(number) {
+            return number % 1 === 0 ? number.toFixed(0) : number.toFixed(2).replace(/\.?0+$/, '');
+        }
+
+
+    // Function to update calculations for a specific row
+    function updateRowCalculations(row) {
+        var startDateStr = row.find('.date-picker').eq(0).val();
+        var endDateStr = row.find('.date-picker').eq(1).val();
+
+        // Ensure commas are replaced with dots before parsing
+        var enhedspris = parseFloat(row.find('.editable').eq(5).text().replace(',', '.')) || 0;
+        var meter = parseFloat(row.find('.editable').eq(6).text().replace(',', '.')) || 0;
+
+        // Log the values for debugging
+        console.log("Start Date:", startDateStr);
+        console.log("End Date:", endDateStr);
+        console.log("Enhedspris:", enhedspris);
+        console.log("Meter:", meter);
+
+        try {
+            var startDateParts = startDateStr.split('-');
+            var endDateParts = endDateStr.split('-');
+            var startDate = new Date(startDateParts[2], startDateParts[1] - 1, startDateParts[0]);
+            var endDate = new Date(endDateParts[2], endDateParts[1] - 1, endDateParts[0]);
+
+            // Calculate AntalDage
+            var antalDage = Math.floor((endDate - startDate) / (1000 * 60 * 60 * 24)) + 1;
+            if (isNaN(antalDage) || antalDage < 0) antalDage = 0;
+            row.find('.antal-dage').text(antalDage);
+
+            // Log the calculated AntalDage for debugging
+            console.log("AntalDage:", antalDage);
+
+            // Calculate TotalPris
+            var totalPris = enhedspris * meter * antalDage;
+            if (isNaN(totalPris)) totalPris = 0;
+            row.find('.total-pris').text(formatNumber(totalPris).replace('.', ','));
+            row.find('.editable').eq(5).text(formatNumber(enhedspris).replace('.', ','));
+            row.find('.editable').eq(6).text(formatNumber(meter).replace('.', ','));
+
+            // Log the calculated TotalPris for debugging
+            console.log("TotalPris:", totalPris);
+        } catch (error) {
+            console.error("Error parsing dates or calculating values:", error);
+        }
+    }
+
+    // Set the width of the divider to 40% of the h1 width
+    function adjustDivider() {
+            var h1Width = $('h1').width();
+            $('.divider').css('width', h1Width * 0.4 + 'px');
+        }
+
+    // Adjust the divider on page load and window resize
+    adjustDivider();
+    $(window).resize(adjustDivider);
+
+
+    // Function to handle row updates
+    function updateRow(button) {
+        var row = $(button).closest('tr');
+        var id = row.data('id');
+        var data = {
+            ID: id,
+            Ansøger: row.find('td:eq(0)').text(),
+            FørsteSted: row.find('td:eq(1)').text(),
+            Firmanavn: row.find('td:eq(3)').text(),
+            CvrNr: row.find('td:eq(4)').text(),
+            TilladelsesType: row.find('td:eq(5)').text(),
+            Enhedspris: row.find('td:eq(6)').text().replace(',', '.'),
+            Meter: row.find('td:eq(7)').text().replace(',', '.'),
+            Startdato: row.find('td:eq(8) input').val(),
+            Slutdato: row.find('td:eq(9) input').val(),
+            SendTilFakturering: row.find('td:eq(12) input').is(':checked') ? 1 : 0
+        };
+
+        $.ajax({
+            url: '/update',
+            type: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify(data),
+            success: function(response) {
+                if (response.success) {
+                    alert('Fakturaen er opdateret!');
+                } else {
+                    if (response.errors && Array.isArray(response.errors)) {
+                        alert('Kunne ikke opdatere fakturaen:\n' + response.errors.join('\n'));
+                    } else {
+                        alert('Kunne ikke opdatere fakturaen: Ukendt fejl.');
+                    }
+                }
+            },
+            error: function(xhr) {
+                alert('En fejl opstod under opdateringen af fakturaen.');
+            }
+        });
+    }
+
+    function deleteRow(button) {
+        console.log("Delete button clicked"); // Debug: Check if this function is triggered
+        var row = $(button).closest('tr');
+        var id = row.data('id');
+        var tilladelsesnr = row.find('td:eq(2) a').text(); // Extract the Tilladelsesnr from the row
+
+        // Confirmation prompt
+        var confirmation = prompt(`Er du sikker på at du vil slette denne fakturalinje for tilladelse ${tilladelsesnr}? Skriv 'Ja' hvis du vil slette linjen`);
+        if (confirmation !== 'Ja') {
+            alert('Sletning afbrudt.');
+            return; // Exit the function if the user does not confirm
+        }
+
+        // Send DELETE request
+        $.ajax({
+            url: '/delete',
+            type: 'DELETE',
+            contentType: 'application/json',
+            data: JSON.stringify({ ID: id }),
+            success: function(response) {
+                if (response.success) {
+                    alert('Fakturalinjen blev slettet.');
+                    row.remove(); // Remove the row from the table
+                } else {
+                    alert('Kunne ikke slette fakturalinjen: ' + (response.error || 'Ukendt fejl.'));
+                }
+            },
+            error: function(xhr) {
+                alert('En fejl opstod under sletning af fakturalinjen. Kontakt venligst Digitalisering hvis fejlen bliver ved med at forekomme.');
+            }
+        });
+    }
+
+    // Function to handle adding a new row
+    function insertRow(form) {
+        var formData = $(form).serialize(); // Serialize form data
+
+        $.ajax({
+            url: '/add',
+            type: 'POST',
+            data: formData,
+            success: function(response) {
+                if (response.success) {
+                    alert('Faktura tilføjet!');
+                    location.reload(); // Reload the page
+                } else {
+                    // Display validation errors
+                    if (response.errors && Array.isArray(response.errors)) {
+                        alert('Kunne ikke tilføje fakturaen:\n' + response.errors.join('\n') +'\nKontakt venligst Digitalisering hvis fejlen bliver ved med at forekomme.');
+                    } else {
+                        alert('Kunne ikke tilføje faktura grundet en ukendt fejl. Kontakt venligst Digitalisering hvis fejlen bliver ved med at forekomme.');
+                    }
+                }
+            },
+            error: function(xhr) {
+                alert('Fejl ved oprettelse af faktura. Kontakt venligst Digitalisering hvis fejlen bliver ved med at forekomme.');
+            }
+        });
+    }
+
+
+    // Function to calculate the total sum of the "Pris" column
+    function calculateTotalSum() {
+            var totalSum = 0;
+            $('tbody .total-pris').each(function() {
+                var price = parseFloat($(this).text().replace(',', '.')) || 0;
+                totalSum += price;
+            });
+            $('#total-pris-sum').text(formatNumber(totalSum).replace('.', ','));
+        }
+
+    
+
+    // Initial calculation on page load
+    $('tbody tr').each(function() {
+        updateRowCalculations($(this));
+    });
+    calculateTotalSum(); // Calculate the initial total sum
+});
+
+</script>

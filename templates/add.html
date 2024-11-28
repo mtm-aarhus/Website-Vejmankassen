@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <link rel="icon" href="{{ url_for('static', filename='favicon-32x32.png') }}" sizes="32x32" type="image/png">
+    <title>Vejmankassen - Add Row</title>
+    {% include 'common.html' %}
+</head>
+
+<body class="container-fluid mt-2">
+    <!-- Main Title with Logo -->
+    <img src="{{ url_for('static', filename='aak-logo.svg') }}" alt="AAK Logo" class="logo" style="position: absolute; top: 10px; right: 10px;">
+
+    <header>
+        <h1 class="mb-2">Vejmankassen</h1>
+    </header>
+    <div class="divider"></div> <!-- Divider directly below the title -->
+
+    <br>
+
+    <!-- Page-Specific Navigation with Active Highlight -->
+    <nav class="mb-3">
+        <a href="/" class="{% if active_page == 'ikke-faktureret' %}active{% endif %}">Ikke Faktureret</a> | 
+        <a href="/til-fakturering" class="{% if active_page == 'til-fakturering' %}active{% endif %}">Til Fakturering</a> | 
+        <a href="/faktureret" class="{% if active_page == 'faktureret' %}active{% endif %}">Faktureret</a> | 
+        <a href="/add" class="{% if active_page == 'add' %}active{% endif %}">Tilføj faktura</a>
+    </nav>
+
+    <!-- Feedback Messages -->
+    {% if errors %}
+    <div class="alert alert-danger">
+        <ul>
+            {% for error in errors %}
+            <li>{{ error }}</li>
+            {% endfor %}
+        </ul>
+    </div>
+    {% endif %}
+
+    {% if success %}
+    <div class="alert alert-success">
+        {{ success }}
+    </div>
+    {% endif %}
+
+    <br>
+    <p>Brug nedenstående formular til at oprette en faktura i Vejmankassen. Efter du har oprettet den kan du sende den til fakturering i fanen "Ikke Faktureret"<br>Link til tilladelse er link til selve tilladelsen inde i Vejman f.eks. https://vejman.vd.dk/permissions/update.jsp?caseid=123456789, og tilladelsesnr er f.eks. 24-12345.</p>
+    <!-- Form to Add a Row -->
+    <div class="table-responsive">
+        <form id="add-row-form" method="POST" action="/add">
+            <table class="table table-striped table-bordered">
+                <thead>
+                    <tr>
+                        <th>Link til tilladelse</th>
+                        <th>Ansøger</th>
+                        <th>Adresse</th>
+                        <th>Tilladelsesnr</th>
+                        <th>Firma</th>
+                        <th>Cvr</th>
+                        <th>Type</th>
+                        <th>Enhedspris</th>
+                        <th>Meter</th>
+                        <th>Startdato</th>
+                        <th>Slutdato</th>
+                        <th>Tilføj</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><input type="text" class="form-control" name="VejmanLink" required></td>
+                        <td><input type="text" class="form-control" name="Ansøger" required></td>
+                        <td><input type="text" class="form-control" name="FørsteSted" required></td>
+                        <td><input type="text" class="form-control" name="Tilladelsesnr" required></td>
+                        <td><input type="text" class="form-control" name="Firmanavn" required></td>
+                        <td><input type="text" class="form-control" name="CvrNr" required></td>
+                        <td><input type="text" class="form-control" name="TilladelsesType" required></td>
+                        <td><input type="text" class="form-control" name="Enhedspris" required></td>
+                        <td><input type="text" class="form-control" name="Meter" required></td>
+                        <td><input type="text" class="form-control date-picker" name="Startdato" required></td>
+                        <td><input type="text" class="form-control date-picker" name="Slutdato" required></td>
+                        <td><button type="submit" id="add-row-button" class="btn btn-success">Tilføj</button></td>
+                    </tr>
+                </tbody>
+            </table>
+        </form>
+        
+    </div>
+</body>
+</html>

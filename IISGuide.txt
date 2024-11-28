@@ -1,0 +1,16 @@
+installer httpplatformhandler
+sørg for at der er en odbc driver installeret på serveren
+Opret nyt venv til vejmankassen med requirements.txt
+
+aktiver iis og server manager i windows funktioner
+
+Giv lokalsystem (ikke adm netværk) IIS_IUSRS og AppPool\VejmanKassen fuld adgang til både python installationsmappen, og mappen til VejmanKassen under "sikkerhed" i windows explorer.
+
+Sæt environmentvariable i iis:
+Åben siden i IIS, klik på configuration editor
+vælg system.webServer/httpPlatform og åben environmntVariables
+
+Sæt VejmanKassenSQL 
+
+Imens du er herinde, så vælg "forwardWindowsAuthToken" = True
+
