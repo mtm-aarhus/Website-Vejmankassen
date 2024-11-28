@@ -14,7 +14,6 @@ pandas==2.2.3
 pymssql==2.3.2
 sqlalchemy==2.0.36
 waitress==3.0.2
-flask-login==0.6.3
 ```
 
 Make sure these are installed in a Python virtual environment before deploying the application.
@@ -126,4 +125,4 @@ Create a `web.config` file in the project directory. An example `web.config` mig
 
 ## License
 
-This project is maintained by Aarhus Kommune, and published to github for inspiration and version control. 
+This project is maintained by Aarhus Kommune, and published to github for inspiration and version control under the [GPL-3.0 license](LICENSE)
