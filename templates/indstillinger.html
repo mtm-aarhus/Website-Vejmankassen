@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <link rel="icon" href="{{ url_for('static', filename='favicon-32x32.png') }}" sizes="32x32" type="image/png">
+    <title>Vejmankassen - {{ page_title }}</title>
+    {% include 'common.html' %}
+    <script>
+    $(document).ready(function () {
+    // Initialize datepickers
+    function initializeDatePickers(selector) {
+        $(selector).datepicker({
+            dateFormat: 'dd-mm-yy',
+            firstDay: 1, // Set Monday as the first day of the week
+        });
+    }
+
+    // Function to make table cells editable
+    function makeEditable(cell) {
+        const currentText = $(cell).text();
+        const input = $('<input>', { value: currentText, class: 'form-control' });
+        $(cell).empty().append(input);
+        input.focus();
+
+        // Save value on blur or Enter
+        input.on('blur keyup', function (e) {
+            if (e.type === 'blur' || e.key === 'Enter') {
+                const newText = input.val();
+                $(cell).text(newText);
+                input.remove();
+            }
+        });
+    }
+
+    // Make existing table cells editable
+    $('#indstillingerTable').on('dblclick', '.editable', function () {
+        makeEditable(this);
+    });
+
+    // Add new row
+    $('#addRowBtn').on('click', function () {
+        const newRow = `
+        <tr class="new-row">
+            <td class="editable" data-column="Fakturalinje"></td>
+            <td class="editable" data-column="Fordringstype"></td>
+            <td class="editable" data-column="PSPElement"></td>
+            <td class="editable" data-column="MaterialeNrOpus"></td>
+            <td class="editable" data-column="KundRefId"></td>
+            <td class="editable" data-column="Toptekst"></td>
+            <td class="editable" data-column="Forklaring"></td>
+            <td class="editable" data-column="MaterielIDVejman"></td>
+            <td class="date-cell" data-column="FraStartdato">
+                <input type="text" class="date-picker form-control" />
+            </td>
+            <td class="date-cell" data-column="FraSlutdato">
+                <input type="text" class="date-picker form-control" />
+            </td>
+            <td>
+                <button class="btn btn-success btn-sm" onclick="addRow(this)">Tilføj</button>
+                <button class="btn btn-secondary btn-sm" onclick="cancelRow(this)">Fortryd</button>
+            </td>
+        </tr>`;
+        $('#indstillingerTable tbody').append(newRow);
+
+        // Apply datepicker to the new date input fields
+        initializeDatePickers('.new-row .date-picker');
+    });
+
+    window.cancelRow = function (btn) {
+        const row = $(btn).closest('tr');
+        row.remove();
+    };
+
+    window.saveRow = function (btn) {
+        const row = $(btn).closest('tr');
+        const rowData = {};
+
+        // Get editable text fields
+        row.find('.editable').each(function () {
+            const column = $(this).data('column');
+            const value = $(this).find('input').length
+                ? $(this).find('input').val()
+                : $(this).text();
+            rowData[column] = value;
+        });
+
+        // Get datepicker values
+        row.find('.date-cell').each(function () {
+            const column = $(this).data('column');
+            const value = $(this).find('input.date-picker').val(); // Get the input value
+            rowData[column] = value; // Add to rowData
+        });
+
+        // Get the identifier for the row (e.g., Fakturalinje)
+        const fakturalinje = row.find('[data-column="Fakturalinje"]').text();
+        rowData['Fakturalinje'] = fakturalinje;
+
+        // Construct URL for the PUT request
+        const url = `/api/indstillinger`;
+
+        // Send data via PUT request
+        $.ajax({
+            url: url,
+            type: 'PUT',
+            contentType: 'application/json',
+            data: JSON.stringify(rowData),
+            success: function (response) {
+                alert(response.message);
+                location.reload(); // Reload page to reflect updates
+            },
+            error: function (error) {
+                alert('Fejl ved opdatering af række: ' + error.responseJSON.error);
+            }
+        });
+    };
+
+    // Add row
+    window.addRow = function (btn) {
+        const row = $(btn).closest('tr');
+        const rowData = {};
+
+        // Get editable text fields
+        row.find('.editable').each(function () {
+            const column = $(this).data('column');
+            const value = $(this).find('input').length
+                ? $(this).find('input').val()
+                : $(this).text();
+            rowData[column] = value;
+        });
+
+        // Get datepicker values
+        row.find('.date-cell').each(function () {
+            const column = $(this).data('column');
+            const value = $(this).find('input.date-picker').val(); // Get the input value
+            rowData[column] = value; // Add to rowData
+        });
+
+        // Send data via POST request
+        $.ajax({
+            url: '/api/indstillinger',
+            type: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify(rowData),
+            success: function (response) {
+                alert(response.message);
+                location.reload();
+            },
+            error: function (error) {
+                alert('Fejl ved tilføjelse af række: ' + error.responseJSON.error);
+                row.remove();
+            }
+        });
+    };
+
+    // Delete row
+    window.deleteRow = function (btn) {
+        const row = $(btn).closest('tr');
+        const fakturalinje = row.find('[data-column="Fakturalinje"]').text();
+        var confirmation = prompt(`Er du sikker på at du vil slette denne fakturalinje: ${fakturalinje}? Skriv 'Ja' hvis du vil slette linjen`);
+        if (confirmation !== 'Ja') {
+            alert('Sletning afbrudt.');
+            return; // Exit the function if the user does not confirm
+        }
+        
+        if (!fakturalinje) {
+            row.remove();
+            return;
+        }
+        const rowData = {};
+        rowData["Fakturalinje"] = fakturalinje
+
+
+        $.ajax({
+            url: `/api/indstillinger`,
+            type: 'DELETE',
+            contentType: 'application/json',
+            data: JSON.stringify(rowData),
+            success: function (response) {
+                alert(response.message);
+                location.reload();
+            },
+            error: function (error) {
+                alert('Fejl ved sletning af række: ' + error.responseJSON.error);
+            }
+        });
+    };
+
+    // Initialize existing datepickers
+    initializeDatePickers('.date-picker');
+});
+</script>
+
+</head>
+<body class="container-fluid mt-2">
+    <!-- Main Title with Logo -->
+    <img src="{{ url_for('static', filename='aak-logo.svg') }}" alt="AAK Logo" class="logo" style="position: absolute; top: 10px; right: 10px;">
+
+    <header>
+        <h1 class="mb-2">Vejmankassen</h1>
+    </header>
+    <div class="divider"></div> <!-- Divider directly below the title -->
+
+    <br>
+
+    <!-- Page-Specific Navigation with Active Highlight -->
+    <nav class="mb-3">
+        <a href="/" class="{% if active_page == 'ikke-faktureret' %}active{% endif %}">Ikke Faktureret</a> | 
+        <a href="/til-fakturering" class="{% if active_page == 'til-fakturering' %}active{% endif %}">Til Fakturering</a> | 
+        <a href="/faktureret" class="{% if active_page == 'faktureret' %}active{% endif %}">Faktureret</a> | 
+        <a href="/add" class="{% if active_page == 'add' %}active{% endif %}">Tilføj faktura</a> | 
+        <a href="/indstillinger" class="{% if active_page == 'indstillinger' %}active{% endif %}">Indstillinger</a>
+    </nav>
+    <div class="table-responsive">
+        <table id="indstillingerTable" class="table table-striped table-bordered">
+    <thead>
+        <tr>
+            <th>Fakturalinje</th>
+            <th>Fordringstype</th>
+            <th>PSPElement</th>
+            <th>MaterialeNrOpus</th>
+            <th>KundRefId</th>
+            <th>Toptekst</th>
+            <th>Forklaring</th>
+            <th>MaterielIDVejman</th>
+            <th>FraStartdato</th>
+            <th>FraSlutdato</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for row in data %}
+        <tr>
+            <td class="non-editable" data-column="Fakturalinje">{{ row['Fakturalinje'] }}</td>
+            <td class="editable" data-column="Fordringstype">{{ row['Fordringstype'] }}</td>
+            <td class="editable" data-column="PSPElement">{{ row['PSPElement'] }}</td>
+            <td class="editable" data-column="MaterialeNrOpus">{{ row['MaterialeNrOpus'] }}</td>
+            <td class="editable" data-column="KundRefId">{{ row['KundRefId'] }}</td>
+            <td class="editable" data-column="Toptekst">{{ row['Toptekst'] }}</td>
+            <td class="editable" data-column="Forklaring">{{ row['Forklaring'] }}</td>
+            <td class="editable" data-column="MaterielIDVejman">{{ row['MaterielIDVejman'] }}</td>
+            <td class="date-cell" data-column="FraStartdato">
+                <input type="text" class="date-picker" value="{{ row['FraStartdato'] }}">
+            </td>
+            <td class="date-cell" data-column="FraSlutdato">
+                <input type="text" class="date-picker" value="{{ row['FraSlutdato'] }}">
+            </td>
+            <td>
+                <button class="btn btn-primary btn-sm" onclick="saveRow(this)">Gem</button>
+                <button class="btn btn-danger btn-sm" onclick="deleteRow(this)">Slet</button>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+    <tfoot>
+        <tr>
+            <td colspan="10" class="text-right"><strong>Tilføj række:</strong></td>
+            <td>
+                <button class="btn btn-success btn-sm" id="addRowBtn">Tilføj</button>
+            </td>
+        </tr>
+    </tfoot>
+</table>
+
+    </div>
+</div>
+
+
+</body>
+</html>

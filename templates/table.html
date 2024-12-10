@@ -6,7 +6,6 @@
                 <th>Ansøger</th>
                 <th>Adresse</th>
                 <th>Tilladelse</th>
-                <th>Firma</th>
                 <th>Cvr</th>
                 <th>Type</th>
                 <th>Enhedspris</th>
@@ -23,29 +22,31 @@
         <tbody>
             {% for row in data %}
             <tr data-id="{{ row['ID'] }}">
-                <td class="editable">{{ row['Ansøger'] }}</td>
-                <td class="editable">{{ row['FørsteSted'] }}</td>
-                <td class="non-editable">
+                <td class="editable" data-column="Ansøger">{{ row['Ansøger'] }}</td>
+                <td class="editable" data-column="Adresse">{{ row['FørsteSted'] }}</td>
+                <td class="non-editable" data-column="Tilladelse">
                     <a href="https://vejman.vd.dk/permissions/update.jsp?caseid={{ row['VejmanID'] }}" target="_blank">{{ row['Tilladelsesnr'] }}</a>
                 </td>
-                <td class="editable">{{ row['Firmanavn'] }}</td>
-                <td class="editable">{{ row['CvrNr'] }}</td>
-                <td class="editable">{{ row['TilladelsesType'] }}</td>
-                <td class="editable">{{ row['Enhedspris'].replace('.', ',') }}</td>
-                <td class="editable">{{ row['Meter'].replace('.', ',') }}</td>
-                <td class="date-cell"><input type="text" class="date-picker" value="{{ row['Startdato'] }}"></td>
-                <td class="date-cell"><input type="text" class="date-picker" value="{{ row['Slutdato'] }}"></td>
-                <td class="non-editable antal-dage">0</td>
-                <td class="non-editable total-pris">0,000</td>
-                <td><input type="checkbox" {% if row['SendTilFakturering'] %}checked{% endif %}></td>
-                <td><button class="btn btn-primary btn-sm" onclick="updateRow(this)">Opdater</button></td>
+                <td class="editable" data-column="CvrNr">{{ row['CvrNr'] }}</td>
+                <td class="editable" data-column="TilladelsesType">{{ row['TilladelsesType'] }}</td>
+                <td class="editable" data-column="Enhedspris">{{ row['Enhedspris'].replace('.', ',') }}</td>
+                <td class="editable" data-column="Meter">{{ row['Meter'].replace('.', ',') }}</td>
+                <td class="date-cell" data-column="Startdato"><input type="text" class="date-picker" value="{{ row['Startdato'] }}"></td>
+                <td class="date-cell" data-column="Slutdato"><input type="text" class="date-picker" value="{{ row['Slutdato'] }}"></td>
+                <td class="non-editable antal-dage" data-column="AntalDage">0</td>
+                <td class="non-editable total-pris" data-column="TotalPris">0,000</td>
+                <td data-column="SendTilFakturering">
+                    <input type="checkbox" {% if row['SendTilFakturering'] %}checked{% endif %}>
+                </td>
+                <td><button class="btn btn-primary btn-sm" onclick="updateRow(this)">Gem</button></td>
                 <td><button class="btn btn-danger btn-sm" onclick="deleteRow(this)">Slet</button></td>
             </tr>
+            
             {% endfor %}
         </tbody>
         <tfoot>
             <tr>
-                <td colspan="11" class="text-right"><strong>Total:</strong></td>
+                <td colspan="10" class="text-right"><strong>Total:</strong></td>
                 <td id="total-pris-sum">0,000</td>
                 <td colspan="3"></td>
             </tr>

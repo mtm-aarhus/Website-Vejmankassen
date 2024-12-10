@@ -4,6 +4,40 @@
     <link rel="icon" href="{{ url_for('static', filename='favicon-32x32.png') }}" sizes="32x32" type="image/png">
     <title>Vejmankassen - Add Row</title>
     {% include 'common.html' %}
+<script>
+    // Use event delegation to handle "Add" button click for inserting rows
+    $('#add-row-button').on('click', function(e) {
+        e.preventDefault(); // Prevent default form submission
+        insertRow('#add-row-form'); // Call the insertRow function
+    });
+
+    // Function to handle adding a new row
+    function insertRow(form) {
+        var formData = $(form).serialize(); // Serialize form data
+
+        $.ajax({
+            url: '/add',
+            type: 'POST',
+            data: formData,
+            success: function(response) {
+                if (response.success) {
+                    alert('Faktura tilføjet!');
+                    location.reload(); // Reload the page
+                } else {
+                    // Display validation errors
+                    if (response.errors && Array.isArray(response.errors)) {
+                        alert('Kunne ikke tilføje fakturaen:\n' + response.errors.join('\n') +'\nKontakt venligst Digitalisering hvis fejlen bliver ved med at forekomme.');
+                    } else {
+                        alert('Kunne ikke tilføje faktura grundet en ukendt fejl. Kontakt venligst Digitalisering hvis fejlen bliver ved med at forekomme.');
+                    }
+                }
+            },
+            error: function(xhr) {
+                alert('Fejl ved oprettelse af faktura. Kontakt venligst Digitalisering hvis fejlen bliver ved med at forekomme.');
+            }
+        });
+    }
+</script>
 </head>
 
 <body class="container-fluid mt-2">
@@ -22,7 +56,8 @@
         <a href="/" class="{% if active_page == 'ikke-faktureret' %}active{% endif %}">Ikke Faktureret</a> | 
         <a href="/til-fakturering" class="{% if active_page == 'til-fakturering' %}active{% endif %}">Til Fakturering</a> | 
         <a href="/faktureret" class="{% if active_page == 'faktureret' %}active{% endif %}">Faktureret</a> | 
-        <a href="/add" class="{% if active_page == 'add' %}active{% endif %}">Tilføj faktura</a>
+        <a href="/add" class="{% if active_page == 'add' %}active{% endif %}">Tilføj faktura</a> | 
+                <a href="/indstillinger" class="{% if active_page == 'indstillinger' %}active{% endif %}">Indstillinger</a>
     </nav>
 
     <!-- Feedback Messages -->
@@ -54,7 +89,6 @@
                         <th>Ansøger</th>
                         <th>Adresse</th>
                         <th>Tilladelsesnr</th>
-                        <th>Firma</th>
                         <th>Cvr</th>
                         <th>Type</th>
                         <th>Enhedspris</th>
@@ -70,7 +104,6 @@
                         <td><input type="text" class="form-control" name="Ansøger" required></td>
                         <td><input type="text" class="form-control" name="FørsteSted" required></td>
                         <td><input type="text" class="form-control" name="Tilladelsesnr" required></td>
-                        <td><input type="text" class="form-control" name="Firmanavn" required></td>
                         <td><input type="text" class="form-control" name="CvrNr" required></td>
                         <td><input type="text" class="form-control" name="TilladelsesType" required></td>
                         <td><input type="text" class="form-control" name="Enhedspris" required></td>
