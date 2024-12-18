@@ -107,8 +107,35 @@
                 alert(response.message);
                 location.reload(); // Reload page to reflect updates
             },
-            error: function (error) {
-                alert('Fejl ved opdatering af række: ' + error.responseJSON.error);
+            error: function (xhr) {
+            let errorMessage = 'En ukendt fejl opstod.';
+            
+            // Handle structured JSON responses
+            if (xhr.responseJSON) {
+                if (xhr.responseJSON.errors && Array.isArray(xhr.responseJSON.errors)) {
+                    // If `errors` is an array, join them into a single string
+                    errorMessage = xhr.responseJSON.errors.join('\n');
+                } else if (xhr.responseJSON.error) {
+                    // If `error` is a single string
+                    errorMessage = xhr.responseJSON.error;
+                }
+            } else if (xhr.responseText) {
+                // Handle raw responseText
+                try {
+                    const errorData = JSON.parse(xhr.responseText);
+                    if (errorData.errors && Array.isArray(errorData.errors)) {
+                        // If `errors` is an array
+                        errorMessage = errorData.errors.join('\n');
+                    } else {
+                        errorMessage = errorData.error || 'Ukendt fejl i serverresponsen.';
+                    }
+                } catch (e) {
+                    // Fallback to raw text if JSON parsing fails
+                    errorMessage = xhr.responseText;
+                }
+            }
+
+            alert('Fejl ved opdatering af række:\n' + errorMessage);
             }
         });
     };
@@ -144,9 +171,26 @@
                 alert(response.message);
                 location.reload();
             },
-            error: function (error) {
-                alert('Fejl ved tilføjelse af række: ' + error.responseJSON.error);
-                row.remove();
+            error: function (xhr) {
+            let errorMessage = 'En ukendt fejl opstod.';
+            if (xhr.responseJSON) {
+                if (xhr.responseJSON.errors && Array.isArray(xhr.responseJSON.errors)) {
+                    // Join the array of errors into a single string
+                    errorMessage = xhr.responseJSON.errors.join('\n');
+                } else if (xhr.responseJSON.error) {
+                    errorMessage = xhr.responseJSON.error;
+                }
+            } else if (xhr.responseText) {
+                try {
+                    const errorData = JSON.parse(xhr.responseText);
+                    errorMessage = errorData.errors
+                        ? errorData.errors.join('\n') // Join errors if present
+                        : errorData.error || 'Ukendt fejl i serverresponsen.';
+                } catch (e) {
+                    errorMessage = xhr.responseText; // Use raw response text as fallback
+                }
+            }
+            alert('Fejl ved oprettelse af række:\n' + errorMessage);
             }
         });
     };
@@ -206,7 +250,7 @@
         <a href="/" class="{% if active_page == 'ikke-faktureret' %}active{% endif %}">Ikke Faktureret</a> | 
         <a href="/til-fakturering" class="{% if active_page == 'til-fakturering' %}active{% endif %}">Til Fakturering</a> | 
         <a href="/faktureret" class="{% if active_page == 'faktureret' %}active{% endif %}">Faktureret</a> | 
-        <a href="/add" class="{% if active_page == 'add' %}active{% endif %}">Tilføj faktura</a> | 
+        <!-- <a href="/add" class="{% if active_page == 'add' %}active{% endif %}">Tilføj faktura</a> | -->
         <a href="/indstillinger" class="{% if active_page == 'indstillinger' %}active{% endif %}">Indstillinger</a>
     </nav>
     <div class="table-responsive">

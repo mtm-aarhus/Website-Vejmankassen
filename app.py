@@ -1,11 +1,11 @@
 from flask import Flask, render_template, request, jsonify
 import pandas as pd
 from sqlalchemy import create_engine, text
+from sqlalchemy.exc import IntegrityError, OperationalError
 from datetime import datetime
 import logging
 import os
-from urllib.parse import urlparse, parse_qs
-
+import re
 
 print("Current working directory:", os.getcwd())
 print(f"Running on port: {os.environ.get('HTTP_PLATFORM_PORT')}")
@@ -21,6 +21,19 @@ def get_connection():
     connection_string = os.getenv('VejmanKassenSQL')
     engine = create_engine(connection_string)
     return engine
+
+
+
+def clean_hidden_characters(data):
+    """Remove hidden characters (e.g., \n, \r, \t, \u00a0) from all string fields in the given data."""
+    cleaned_data = {}
+    for key, value in data.items():
+        if isinstance(value, str):
+            cleaned_data[key] = re.sub(r"[\r\n\t\u00a0]", "", value)  # Remove hidden characters
+        else:
+            cleaned_data[key] = value
+    return cleaned_data
+
 
 # Route to display rows where "Faktureret" is 0
 
@@ -87,42 +100,41 @@ def indstillinger():
     except Exception as e:
         return f"Fejl: {str(e)}", 500
 
-#Add row indstillinger
 @app.route('/api/indstillinger', methods=['POST'])
 def add_indstilling():
-    data = request.json
+    data = clean_hidden_characters(request.json)
     errors = []
 
     # Debugging: Print incoming data
     print("Received data:", data)
 
-    # Validation logic
+    # Custom validation logic with user-friendly error messages
     if not data.get('Fakturalinje'):
-        errors.append("Fakturalinje is required.")
+        errors.append("Fakturalinje er påkrævet og kan ikke være tom.")
 
     try:
         fra_startdato = datetime.strptime(data['FraStartdato'], '%d-%m-%Y').strftime('%Y-%m-%d')
     except ValueError:
-        errors.append("FraStartdato must be in the format dd-mm-yyyy, e.g., 31-12-2024.")
+        errors.append("FraStartdato skal skrives som dag-måned-år, f.eks. 31-12-2024.")
 
     try:
         fra_slutdato = datetime.strptime(data['FraSlutdato'], '%d-%m-%Y').strftime('%Y-%m-%d')
     except ValueError:
-        errors.append("FraSlutdato must be in the format dd-mm-yyyy, e.g., 31-12-2024.")
+        errors.append("FraSlutdato skal skrives som dag-måned-år, f.eks. 31-12-2024.")
 
     try:
         materiale_nr_opus = int(data['MaterialeNrOpus']) if data['MaterialeNrOpus'] else None
     except ValueError:
-        errors.append("MaterialeNrOpus must be a valid integer.")
+        errors.append("MaterialeNrOpus skal være et heltal.")
 
     try:
         materiel_id_vejman = int(data['MaterielIDVejman']) if data['MaterielIDVejman'] else None
     except ValueError:
-        errors.append("MaterielIDVejman must be a valid integer.")
+        errors.append("MaterielIDVejman skal være et heltal.")
 
     # Return errors if validation fails
     if errors:
-        return jsonify(success=False, errors=errors)
+        return jsonify(success=False, errors=errors), 400  # Set status code to 400 for validation errors
 
     # Prepare the SQL query
     insert_query = text("""
@@ -150,60 +162,115 @@ def add_indstilling():
 
         # Debugging: Check if rows were affected
         print("Rows affected:", result.rowcount)
-
         return jsonify(success=True, message=f"Indstillinger for fakturalinje {data['Fakturalinje']} er blevet oprettet")
+
+    except IntegrityError:
+        error_message = "Fakturalinjen eksisterer allerede. Dobbeltkontrollér dine data."
+        print("SQL fejl: IntegrityError")
+        return jsonify(success=False, errors=[error_message]), 400  # Set status code to 400 for integrity errors
+
+    except OperationalError:
+        error_message = "Der opstod en fejl ved forbindelsen til databasen. Prøv igen senere."
+        print("SQL fejl: OperationalError")
+        return jsonify(success=False, errors=[error_message]), 500  # Set status code to 500 for operational errors
 
     except Exception as e:
         # Debugging: Log the error
         print(f"Error occurred: {e}")
-        return jsonify(success=False, error=str(e)), 500
+        return jsonify(success=False, errors=[f"Ukendt fejl: {str(e)}"]), 500  # Set status code to 500 for unknown errors
+
+
 
 #Update row indstillinger
 @app.route('/api/indstillinger', methods=['PUT'])
 def update_indstilling():
+    data = clean_hidden_characters(request.json)
+    errors = []
+
+    # Debugging: Print incoming data
+    print("Received data:", data)
+
+    # Validation logic with detailed error messages
+    fakturalinje = data.get('Fakturalinje')
+    if not fakturalinje:
+        errors.append("Fakturalinje er påkrævet for at opdatere en række.")
+
     try:
-        data = request.json
-        print("Received data:", data)
-        fakturalinje = data.get('Fakturalinje')
-        # Optional: Validate or transform date fields
-        fra_startdato = data.get('FraStartdato')
-        fra_slutdato = data.get('FraSlutdato')
+        fra_startdato = datetime.strptime(data['FraStartdato'], '%d-%m-%Y').strftime('%Y-%m-%d') if data.get('FraStartdato') else None
+    except ValueError:
+        errors.append("FraStartdato skal skrives som dag-måned-år, f.eks. 31-12-2024.")
 
-        if fra_startdato:
-            fra_startdato = datetime.strptime(fra_startdato, '%d-%m-%Y').strftime('%Y-%m-%d')
-        if fra_slutdato:
-            fra_slutdato = datetime.strptime(fra_slutdato, '%d-%m-%Y').strftime('%Y-%m-%d')
+    try:
+        fra_slutdato = datetime.strptime(data['FraSlutdato'], '%d-%m-%Y').strftime('%Y-%m-%d') if data.get('FraSlutdato') else None
+    except ValueError:
+        errors.append("FraSlutdato skal skrives som dag-måned-år, f.eks. 31-12-2024.")
 
-        engine = get_connection()
+    try:
+        materiale_nr_opus = int(data['MaterialeNrOpus']) if data.get('MaterialeNrOpus') else None
+    except ValueError:
+        errors.append("MaterialeNrOpus skal være et gyldigt heltal.")
+
+    try:
+        materiel_id_vejman = int(data['MaterielIDVejman']) if data.get('MaterielIDVejman') else None
+    except ValueError:
+        errors.append("MaterielIDVejman skal være et gyldigt heltal.")
+
+    # Return errors if validation fails
+    if errors:
+        return jsonify(success=False, errors=errors), 400  # Add 400 status code for validation errors
+
+    # Prepare and execute the SQL query
+    update_query = text("""
+        UPDATE [dbo].[VejmanFakturaTekster]
+        SET Fordringstype = :Fordringstype,
+            PSPElement = :PSPElement,
+            MaterialeNrOpus = :MaterialeNrOpus,
+            KundRefId = :KundRefId,
+            Toptekst = :Toptekst,
+            Forklaring = :Forklaring,
+            MaterielIDVejman = :MaterielIDVejman,
+            FraStartdato = :FraStartdato,
+            FraSlutdato = :FraSlutdato
+        WHERE Fakturalinje = :Fakturalinje
+    """)
+
+    # Database connection
+    engine = get_connection()
+    try:
         with engine.begin() as conn:
-            query = text("""
-                UPDATE [dbo].[VejmanFakturaTekster]
-                SET Fordringstype = :Fordringstype,
-                    PSPElement = :PSPElement,
-                    MaterialeNrOpus = :MaterialeNrOpus,
-                    KundRefId = :KundRefId,
-                    Toptekst = :Toptekst,
-                    Forklaring = :Forklaring,
-                    MaterielIDVejman = :MaterielIDVejman,
-                    FraStartdato = :FraStartdato,
-                    FraSlutdato = :FraSlutdato
-                WHERE Fakturalinje = :Fakturalinje
-            """)
-            conn.execute(query, {
+            result = conn.execute(update_query, {
                 'Fakturalinje': fakturalinje,
-                'Fordringstype': data['Fordringstype'],
-                'PSPElement': data['PSPElement'],
-                'MaterialeNrOpus': int(data['MaterialeNrOpus']),
-                'KundRefId': data['KundRefId'],
-                'Toptekst': data['Toptekst'],
-                'Forklaring': data['Forklaring'],
-                'MaterielIDVejman': int(data['MaterielIDVejman']),
+                'Fordringstype': data.get('Fordringstype', None),
+                'PSPElement': data.get('PSPElement', None),
+                'MaterialeNrOpus': materiale_nr_opus,
+                'KundRefId': data.get('KundRefId', None),
+                'Toptekst': data.get('Toptekst', None),
+                'Forklaring': data.get('Forklaring', None),
+                'MaterielIDVejman': materiel_id_vejman,
                 'FraStartdato': fra_startdato,
                 'FraSlutdato': fra_slutdato,
             })
-        return jsonify({"message": f"Indstillinger for fakturalinje {fakturalinje} er blevet opdateret"})
+
+        # Debugging: Check if rows were affected
+        if result.rowcount == 0:
+            return jsonify(success=False, errors=[f"Fakturalinje {fakturalinje} blev ikke fundet. Ingen rækker opdateret."]), 400
+
+        return jsonify(success=True, message=f"Indstillinger for fakturalinje {fakturalinje} er blevet opdateret")
+
+    except IntegrityError:
+        error_message = f"Fejl: Fakturalinjen {fakturalinje} overholder ikke unikke eller andre databasebegrænsninger."
+        print("SQL fejl: IntegrityError")
+        return jsonify(success=False, errors=[error_message]), 400
+
+    except OperationalError:
+        error_message = "Der opstod en fejl ved forbindelsen til databasen. Prøv igen senere."
+        print("SQL fejl: OperationalError")
+        return jsonify(success=False, errors=[error_message]), 500
+
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        # Debugging: Log the error
+        print(f"Error occurred: {e}")
+        return jsonify(success=False, errors=[f"Ukendt fejl: {str(e)}"]), 500
 
 #Delete row indstillinger
 @app.route('/api/indstillinger', methods=['DELETE'])
@@ -223,7 +290,7 @@ def delete_indstilling():
 # Route to update a row in the table
 @app.route('/update', methods=['POST'])
 def update():
-    data = request.json
+    data = clean_hidden_characters(request.json)
     errors = []
 
     # Debugging: Print incoming data
@@ -289,115 +356,115 @@ def update():
         return jsonify(success=False, errors=[f"Database fejl: {str(e)}"])
 
 
-import re
-from urllib.parse import urlparse, parse_qs
+# from urllib.parse import urlparse, parse_qs
 
-@app.route('/add', methods=['GET', 'POST'])
-def add_row():
-    if request.method == 'POST':
-        data = request.form
-        errors = []
-        # Extract and validate fields
-        vejman_link = data.get('VejmanLink', '').strip()
-        ansøger = data.get('Ansøger', '').strip()
-        første_sted = data.get('FørsteSted', '').strip()
-        tilladelsesnr = data.get('Tilladelsesnr', '').strip()
-        cvrnr = data.get('CvrNr', '').strip()
-        tilladelsestype = data.get('TilladelsesType', '').strip()
-        enhedspris = data.get('Enhedspris', '').strip()
-        meter = data.get('Meter', '').strip()
-        startdato = data.get('Startdato', '').strip()
-        slutdato = data.get('Slutdato', '').strip()
+# @app.route('/add', methods=['GET', 'POST'])
+# def add_row():
+#     if request.method == 'POST':
+#         raw_data = request.form.to_dict()
+#         data = clean_hidden_characters(raw_data)
+#         errors = []
+#         # Extract and validate fields
+#         vejman_link = data.get('VejmanLink', '').strip()
+#         ansøger = data.get('Ansøger', '').strip()
+#         første_sted = data.get('FørsteSted', '').strip()
+#         tilladelsesnr = data.get('Tilladelsesnr', '').strip()
+#         cvrnr = data.get('CvrNr', '').strip()
+#         tilladelsestype = data.get('TilladelsesType', '').strip()
+#         enhedspris = data.get('Enhedspris', '').strip()
+#         meter = data.get('Meter', '').strip()
+#         startdato = data.get('Startdato', '').strip()
+#         slutdato = data.get('Slutdato', '').strip()
 
-        # Regex patterns
-        vejman_pattern = r"https:\/\/vejman\.vd\.dk\/permissions\/update\.jsp\?caseid=\d+"
-        tilladelsesnr_pattern = r"^\d{2}-\d{1,}$"
-        cvr_pattern = r"^\d{8}$"
+#         # Regex patterns
+#         vejman_pattern = r"https:\/\/vejman\.vd\.dk\/permissions\/update\.jsp\?caseid=\d+"
+#         tilladelsesnr_pattern = r"^\d{2}-\d{1,}$"
+#         cvr_pattern = r"^\d{8}$"
 
-        # Validation checks
-        if not re.match(vejman_pattern, vejman_link):
-            errors.append("Link til tilladelse skal være direkte til vejman, f.eks. https://vejman.vd.dk/permissions/update.jsp?caseid=12345678.")
+#         # Validation checks
+#         if not re.match(vejman_pattern, vejman_link):
+#             errors.append("Link til tilladelse skal være direkte til vejman, f.eks. https://vejman.vd.dk/permissions/update.jsp?caseid=12345678.")
 
-        if not re.match(tilladelsesnr_pattern, tilladelsesnr):
-            errors.append("Tilladelsesnr skal være på formateret som 24-01234.")
+#         if not re.match(tilladelsesnr_pattern, tilladelsesnr):
+#             errors.append("Tilladelsesnr skal være på formateret som 24-01234.")
 
-        if not re.match(cvr_pattern, cvrnr):
-            errors.append("CVR skal være præcis 8 cifre.")
+#         if not re.match(cvr_pattern, cvrnr):
+#             errors.append("CVR skal være præcis 8 cifre.")
 
-        try:
-            enhedspris = float(enhedspris.replace(',', '.'))
-        except ValueError:
-            errors.append("Enhedspris skal være et gyldigt tal.")
+#         try:
+#             enhedspris = float(enhedspris.replace(',', '.'))
+#         except ValueError:
+#             errors.append("Enhedspris skal være et gyldigt tal.")
 
-        try:
-            meter = float(meter.replace(',', '.'))
-        except ValueError:
-            errors.append("Meter skal være et gyldigt tal.")
+#         try:
+#             meter = float(meter.replace(',', '.'))
+#         except ValueError:
+#             errors.append("Meter skal være et gyldigt tal.")
 
-        try:
-            startdato = datetime.strptime(startdato, '%d-%m-%Y')
-        except ValueError:
-            errors.append("Startdato skal skrives som dag-måned-år i tal, f.eks. 31-12-2024.")
+#         try:
+#             startdato = datetime.strptime(startdato, '%d-%m-%Y')
+#         except ValueError:
+#             errors.append("Startdato skal skrives som dag-måned-år i tal, f.eks. 31-12-2024.")
 
-        try:
-            slutdato = datetime.strptime(slutdato, '%d-%m-%Y')
-        except ValueError:
-            errors.append("Slutdato skal skrives som dag-måned-år i tal, f.eks. 31-12-2024.")
+#         try:
+#             slutdato = datetime.strptime(slutdato, '%d-%m-%Y')
+#         except ValueError:
+#             errors.append("Slutdato skal skrives som dag-måned-år i tal, f.eks. 31-12-2024.")
 
-        # Extract VejmanID from the provided link
-        try:
-            query_params = parse_qs(urlparse(vejman_link).query)
-            vejmanid = query_params.get('caseid', [None])[0]  # Extract caseid
-            if not vejmanid:
-                errors.append("Link til tilladelse mangler 'caseid' parameter.")
-        except Exception as e:
-            errors.append(f"Ugyldigt link til tilladelse: {e}")
+#         # Extract VejmanID from the provided link
+#         try:
+#             query_params = parse_qs(urlparse(vejman_link).query)
+#             vejmanid = query_params.get('caseid', [None])[0]  # Extract caseid
+#             if not vejmanid:
+#                 errors.append("Link til tilladelse mangler 'caseid' parameter.")
+#         except Exception as e:
+#             errors.append(f"Ugyldigt link til tilladelse: {e}")
 
-        # If errors, return JSON response
-        if errors:
-            return jsonify(success=False, errors=errors)
+#         # If errors, return JSON response
+#         if errors:
+#             return jsonify(success=False, errors=errors)
 
-        # Insert into the database
-        engine = get_connection()
-        insert_query = text("""
-            INSERT INTO [dbo].[VejmanFakturering] (
-                Ansøger, FørsteSted, Tilladelsesnr, CvrNr,
-                TilladelsesType, Enhedspris, Meter, Startdato, Slutdato, VejmanID
-            )
-            VALUES (
-                :Ansøger, :FørsteSted, :Tilladelsesnr, :CvrNr,
-                :TilladelsesType, :Enhedspris, :Meter, :Startdato, :Slutdato, :VejmanID
-            )
-        """)
+#         # Insert into the database
+#         engine = get_connection()
+#         insert_query = text("""
+#             INSERT INTO [dbo].[VejmanFakturering] (
+#                 Ansøger, FørsteSted, Tilladelsesnr, CvrNr,
+#                 TilladelsesType, Enhedspris, Meter, Startdato, Slutdato, VejmanID
+#             )
+#             VALUES (
+#                 :Ansøger, :FørsteSted, :Tilladelsesnr, :CvrNr,
+#                 :TilladelsesType, :Enhedspris, :Meter, :Startdato, :Slutdato, :VejmanID
+#             )
+#         """)
 
-        try:
-            with engine.begin() as connection:
-                connection.execute(insert_query, {
-                    'Ansøger': ansøger,
-                    'FørsteSted': første_sted,
-                    'Tilladelsesnr': tilladelsesnr,
-                    'CvrNr': cvrnr,
-                    'TilladelsesType': tilladelsestype,
-                    'Enhedspris': enhedspris,
-                    'Meter': meter,
-                    'Startdato': startdato,
-                    'Slutdato': slutdato,
-                    'VejmanID': vejmanid
-                })
-            success_message = f"Faktura for tilladelse {tilladelsesnr} er blevet oprettet, og kan nu opdateres og sendes til fakturering."
-            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-                return jsonify(success=True, message=success_message)
-            else:
-                return render_template('add.html', page_title="Add Row", active_page="add", success=success_message)
-        except Exception as e:
-            error_message = f"Fejl ved oprettelse af faktura: {e}"
-            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-                return jsonify(success=False, errors=[error_message])
-            else:
-                return render_template('add.html', page_title="Add Row", active_page="add", errors=[error_message])
+#         try:
+#             with engine.begin() as connection:
+#                 connection.execute(insert_query, {
+#                     'Ansøger': ansøger,
+#                     'FørsteSted': første_sted,
+#                     'Tilladelsesnr': tilladelsesnr,
+#                     'CvrNr': cvrnr,
+#                     'TilladelsesType': tilladelsestype,
+#                     'Enhedspris': enhedspris,
+#                     'Meter': meter,
+#                     'Startdato': startdato,
+#                     'Slutdato': slutdato,
+#                     'VejmanID': vejmanid
+#                 })
+#             success_message = f"Faktura for tilladelse {tilladelsesnr} er blevet oprettet, og kan nu opdateres og sendes til fakturering."
+#             if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+#                 return jsonify(success=True, message=success_message)
+#             else:
+#                 return render_template('add.html', page_title="Add Row", active_page="add", success=success_message)
+#         except Exception as e:
+#             error_message = f"Fejl ved oprettelse af faktura: {e}"
+#             if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+#                 return jsonify(success=False, errors=[error_message])
+#             else:
+#                 return render_template('add.html', page_title="Add Row", active_page="add", errors=[error_message])
 
-    # Render the form for GET requests
-    return render_template('add.html', page_title="Add Row", active_page="add")
+#     # Render the form for GET requests
+#     return render_template('add.html', page_title="Add Row", active_page="add")
 
 @app.route('/delete', methods=['DELETE'])
 def delete():
