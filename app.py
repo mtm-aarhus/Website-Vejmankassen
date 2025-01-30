@@ -2,10 +2,14 @@ from flask import Flask, render_template, request, jsonify
 import pandas as pd
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import IntegrityError, OperationalError
-from datetime import datetime
+from datetime import datetime, timedelta
 import logging
 import os
 import re
+import time
+
+# Store last button press timestamp (global variable)
+last_button_press = None
 
 print("Current working directory:", os.getcwd())
 print(f"Running on port: {os.environ.get('HTTP_PLATFORM_PORT')}")
@@ -22,8 +26,6 @@ def get_connection():
     engine = create_engine(connection_string)
     return engine
 
-
-
 def clean_hidden_characters(data):
     """Remove hidden characters (e.g., \n, \r, \t, \u00a0) from all string fields in the given data."""
     cleaned_data = {}
@@ -39,46 +41,50 @@ def clean_hidden_characters(data):
 
 @app.route('/')
 def index():
-    engine = get_connection()
-    query = "SELECT * FROM [dbo].[VejmanFakturering] WHERE (Faktureret = 0 OR Faktureret IS NULL) AND (SendTilFakturering = 0 or SendTilFakturering IS NULL) AND ([FakturerIkke] != 1 OR [FakturerIkke] IS NULL)"
-    df = pd.read_sql(query, engine)
-    # Format dates and decimals
-    df['Startdato'] = pd.to_datetime(df['Startdato']).dt.strftime('%d-%m-%Y')
-    df['Slutdato'] = pd.to_datetime(df['Slutdato']).dt.strftime('%d-%m-%Y')
-    df['Enhedspris'] = df['Enhedspris'].map(lambda x: f"{x:.3f}".replace('.', ',')) if 'Enhedspris' in df else ''
-    df['Meter'] = df['Meter'].map(lambda x: f"{x:.3f}".replace('.', ',')) if 'Meter' in df else ''
-    return render_template('index.html', page_title="Ikke Faktureret", active_page='ikke-faktureret', data=df.to_dict(orient='records'))
+    return render_fakturering_page("Ikke Faktureret", "ikke-faktureret",
+                                   "SELECT * FROM [dbo].[VejmanFakturering] WHERE (Faktureret = 0 OR Faktureret IS NULL) AND (SendTilFakturering = 0 or SendTilFakturering IS NULL) AND ([FakturerIkke] != 1 OR [FakturerIkke] IS NULL)")
 
-# Route to display rows where "SendTilFakturering" is 1 and "Faktureret" is 0
 @app.route('/til-fakturering')
 def til_fakturering():
-    engine = get_connection()
-    query = "SELECT * FROM [dbo].[VejmanFakturering] WHERE SendTilFakturering = 1 AND (Faktureret = 0 OR Faktureret IS NULL) AND ([FakturerIkke] != 1 OR [FakturerIkke] IS NULL)"
-    df = pd.read_sql(query, engine)
-    
-    # Format dates and decimals
-    df['Startdato'] = pd.to_datetime(df['Startdato']).dt.strftime('%d-%m-%Y')
-    df['Slutdato'] = pd.to_datetime(df['Slutdato']).dt.strftime('%d-%m-%Y')
-    df['Enhedspris'] = df['Enhedspris'].map(lambda x: f"{x:.3f}".replace('.', ',')) if 'Enhedspris' in df else ''
-    df['Meter'] = df['Meter'].map(lambda x: f"{x:.3f}".replace('.', ',')) if 'Meter' in df else ''
-    
-    return render_template('index.html', page_title="Til Fakturering", active_page='til-fakturering', data=df.to_dict(orient='records'))
+    return render_fakturering_page("Til Fakturering", "til-fakturering",
+                                   "SELECT * FROM [dbo].[VejmanFakturering] WHERE SendTilFakturering = 1 AND (Faktureret = 0 OR Faktureret IS NULL) AND ([FakturerIkke] != 1 OR [FakturerIkke] IS NULL)")
 
-
-# Route to display rows where "Faktureret" is 1
 @app.route('/faktureret')
 def faktureret():
+    return render_fakturering_page("Faktureret", "faktureret",
+                                   "SELECT * FROM [dbo].[VejmanFakturering] WHERE Faktureret = 1 AND ([FakturerIkke] != 1 OR [FakturerIkke] IS NULL)")
+
+def render_fakturering_page(page_title, active_page, query):
+    global last_button_press  # Ensure we are using the global variable
+
     engine = get_connection()
-    query = "SELECT * FROM [dbo].[VejmanFakturering] WHERE Faktureret = 1 AND ([FakturerIkke] != 1 OR [FakturerIkke] IS NULL)"
     df = pd.read_sql(query, engine)
-    
+
     # Format dates and decimals
     df['Startdato'] = pd.to_datetime(df['Startdato']).dt.strftime('%d-%m-%Y')
     df['Slutdato'] = pd.to_datetime(df['Slutdato']).dt.strftime('%d-%m-%Y')
     df['Enhedspris'] = df['Enhedspris'].map(lambda x: f"{x:.3f}".replace('.', ',')) if 'Enhedspris' in df else ''
     df['Meter'] = df['Meter'].map(lambda x: f"{x:.3f}".replace('.', ',')) if 'Meter' in df else ''
-    
-    return render_template('index.html', page_title="Faktureret", active_page="faktureret", data=df.to_dict(orient='records'))
+
+    last_sync = get_last_sync_time()  # Display only
+    now = datetime.now()
+
+    disable_button = False
+    remaining_minutes = 0
+
+    if last_button_press:
+        time_diff = (now - last_button_press).total_seconds() / 60  # Difference in minutes
+        if time_diff < 5:
+            disable_button = True
+            remaining_minutes = round(5 - time_diff, 1)
+
+    return render_template('index.html', 
+                           page_title=page_title, 
+                           active_page=active_page, 
+                           data=df.to_dict(orient='records'),
+                           last_sync=last_sync,
+                           disable_button=disable_button,
+                           remaining_minutes=remaining_minutes)
 
 @app.route('/indstillinger')
 def indstillinger():
@@ -355,117 +361,6 @@ def update():
         print("SQL fejl:", e)  # Log the error
         return jsonify(success=False, errors=[f"Database fejl: {str(e)}"])
 
-
-# from urllib.parse import urlparse, parse_qs
-
-# @app.route('/add', methods=['GET', 'POST'])
-# def add_row():
-#     if request.method == 'POST':
-#         raw_data = request.form.to_dict()
-#         data = clean_hidden_characters(raw_data)
-#         errors = []
-#         # Extract and validate fields
-#         vejman_link = data.get('VejmanLink', '').strip()
-#         ansøger = data.get('Ansøger', '').strip()
-#         første_sted = data.get('FørsteSted', '').strip()
-#         tilladelsesnr = data.get('Tilladelsesnr', '').strip()
-#         cvrnr = data.get('CvrNr', '').strip()
-#         tilladelsestype = data.get('TilladelsesType', '').strip()
-#         enhedspris = data.get('Enhedspris', '').strip()
-#         meter = data.get('Meter', '').strip()
-#         startdato = data.get('Startdato', '').strip()
-#         slutdato = data.get('Slutdato', '').strip()
-
-#         # Regex patterns
-#         vejman_pattern = r"https:\/\/vejman\.vd\.dk\/permissions\/update\.jsp\?caseid=\d+"
-#         tilladelsesnr_pattern = r"^\d{2}-\d{1,}$"
-#         cvr_pattern = r"^\d{8}$"
-
-#         # Validation checks
-#         if not re.match(vejman_pattern, vejman_link):
-#             errors.append("Link til tilladelse skal være direkte til vejman, f.eks. https://vejman.vd.dk/permissions/update.jsp?caseid=12345678.")
-
-#         if not re.match(tilladelsesnr_pattern, tilladelsesnr):
-#             errors.append("Tilladelsesnr skal være på formateret som 24-01234.")
-
-#         if not re.match(cvr_pattern, cvrnr):
-#             errors.append("CVR skal være præcis 8 cifre.")
-
-#         try:
-#             enhedspris = float(enhedspris.replace(',', '.'))
-#         except ValueError:
-#             errors.append("Enhedspris skal være et gyldigt tal.")
-
-#         try:
-#             meter = float(meter.replace(',', '.'))
-#         except ValueError:
-#             errors.append("Meter skal være et gyldigt tal.")
-
-#         try:
-#             startdato = datetime.strptime(startdato, '%d-%m-%Y')
-#         except ValueError:
-#             errors.append("Startdato skal skrives som dag-måned-år i tal, f.eks. 31-12-2024.")
-
-#         try:
-#             slutdato = datetime.strptime(slutdato, '%d-%m-%Y')
-#         except ValueError:
-#             errors.append("Slutdato skal skrives som dag-måned-år i tal, f.eks. 31-12-2024.")
-
-#         # Extract VejmanID from the provided link
-#         try:
-#             query_params = parse_qs(urlparse(vejman_link).query)
-#             vejmanid = query_params.get('caseid', [None])[0]  # Extract caseid
-#             if not vejmanid:
-#                 errors.append("Link til tilladelse mangler 'caseid' parameter.")
-#         except Exception as e:
-#             errors.append(f"Ugyldigt link til tilladelse: {e}")
-
-#         # If errors, return JSON response
-#         if errors:
-#             return jsonify(success=False, errors=errors)
-
-#         # Insert into the database
-#         engine = get_connection()
-#         insert_query = text("""
-#             INSERT INTO [dbo].[VejmanFakturering] (
-#                 Ansøger, FørsteSted, Tilladelsesnr, CvrNr,
-#                 TilladelsesType, Enhedspris, Meter, Startdato, Slutdato, VejmanID
-#             )
-#             VALUES (
-#                 :Ansøger, :FørsteSted, :Tilladelsesnr, :CvrNr,
-#                 :TilladelsesType, :Enhedspris, :Meter, :Startdato, :Slutdato, :VejmanID
-#             )
-#         """)
-
-#         try:
-#             with engine.begin() as connection:
-#                 connection.execute(insert_query, {
-#                     'Ansøger': ansøger,
-#                     'FørsteSted': første_sted,
-#                     'Tilladelsesnr': tilladelsesnr,
-#                     'CvrNr': cvrnr,
-#                     'TilladelsesType': tilladelsestype,
-#                     'Enhedspris': enhedspris,
-#                     'Meter': meter,
-#                     'Startdato': startdato,
-#                     'Slutdato': slutdato,
-#                     'VejmanID': vejmanid
-#                 })
-#             success_message = f"Faktura for tilladelse {tilladelsesnr} er blevet oprettet, og kan nu opdateres og sendes til fakturering."
-#             if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-#                 return jsonify(success=True, message=success_message)
-#             else:
-#                 return render_template('add.html', page_title="Add Row", active_page="add", success=success_message)
-#         except Exception as e:
-#             error_message = f"Fejl ved oprettelse af faktura: {e}"
-#             if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-#                 return jsonify(success=False, errors=[error_message])
-#             else:
-#                 return render_template('add.html', page_title="Add Row", active_page="add", errors=[error_message])
-
-#     # Render the form for GET requests
-#     return render_template('add.html', page_title="Add Row", active_page="add")
-
 @app.route('/delete', methods=['DELETE'])
 def delete():
     data = request.json
@@ -487,6 +382,61 @@ def delete():
         print("SQL fejl:", e)
         return jsonify(success=False, error=f"Database fejl: {str(e)}")
 
+@app.route('/reset_trigger', methods=['POST'])
+def reset_trigger():
+    global last_button_press
+    now = datetime.now()
+
+    # Prevent multiple presses within 5 minutes
+    if last_button_press and now - last_button_press < timedelta(minutes=5):
+        remaining_time = 5 - (now - last_button_press).total_seconds() / 60
+        return jsonify(success=False, message=f"Synkronisering allerede igangsat, vent {round(remaining_time, 1)} minutter"), 403
+
+    try:
+        engine = get_connection()
+        update_query = text("""
+            UPDATE [PyOrchestrator].[dbo].[Triggers] 
+            SET process_status = 'IDLE' 
+            WHERE trigger_name = 'VejmanKassenWebsiteTrigger'
+        """)
+
+        with engine.begin() as connection:
+            result = connection.execute(update_query)
+            if result.rowcount == 0:
+                return jsonify(success=False, message="Process ikke fundet, kontakt udvikler."), 404
+
+        # ✅ Update last button press timestamp
+        last_button_press = now
+
+        return jsonify(success=True, message="Synkronisering igangsat!")
+    except Exception as e:
+        return jsonify(success=False, error=str(e)), 500
+    
+@app.route('/get_last_button_press', methods=['GET'])
+def get_last_button_press():
+    global last_button_press
+    return jsonify(timestamp=last_button_press.strftime('%Y-%m-%d %H:%M:%S') if last_button_press else None)
+
+def get_last_sync_time():
+    """Fetch the last synchronization timestamp from the database."""
+    try:
+        engine = get_connection()
+        query = text("""
+            SELECT TOP 1 [value], [changed_at] 
+            FROM [PyOrchestrator].[dbo].[Constants] 
+            WHERE name = 'VejmanKassenSynkroniseret'
+            ORDER BY changed_at DESC
+        """)
+
+        with engine.begin() as connection:
+            result = connection.execute(query).fetchone()
+
+        if result:
+            return result.changed_at.strftime('%d-%m-%Y %H:%M:%S')  # Format the timestamp
+        return "Ukendt tidspunkt"
+    except Exception as e:
+        print("Error fetching sync time:", e)
+        return "Fejl ved hentning"
 
 
 if __name__ == '__main__':

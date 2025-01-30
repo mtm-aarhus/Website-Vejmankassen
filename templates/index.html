@@ -247,6 +247,8 @@ $(document).ready(function() {
         });
     }
 
+    
+    
     // Function to calculate the total sum of the "Pris" column
     function calculateTotalSum() {
         var totalSum = 0;
@@ -256,8 +258,88 @@ $(document).ready(function() {
         });
         $('#total-pris-sum').text(formatNumber(totalSum).replace('.', ','));
     }
-
     
+    let button = document.getElementById('resetTriggerBtn');
+    if (button) {
+        button.addEventListener('click', function() {
+            this.disabled = true;
+            this.classList.remove("btn-primary");
+            this.classList.add("btn-warning");
+            this.innerText = "Synkronisering igangsat...";
+
+            fetch('/reset_trigger', { method: 'POST' })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert("Synkronisering igangsat.");
+                    startCooldown(5 * 60);  // Start 5-minute cooldown
+                } else {
+                    alert("Fejl: " + data.message);
+                    enableButton("Synkroniser Vejman data");
+                }
+            })
+            .catch(error => {
+                console.error('Fejl ved opdatering af Vejman data:', error);
+                enableButton("Kontakt udvikler");
+            });
+        });
+    }
+
+
+    // Fetch last button press time from Flask and start cooldown if needed
+    function checkLastButtonPress() {
+        fetch('/get_last_button_press')
+        .then(response => response.json())
+        .then(data => {
+            if (data.timestamp) {
+                let lastPressTime = new Date(data.timestamp);
+                let now = new Date();
+                let diff = (now - lastPressTime) / 1000;  // Difference in seconds
+
+                if (diff < 300) {  // If less than 5 minutes ago
+                    let remaining = 300 - diff;
+                    startCooldown(remaining);
+                } else {
+                    enableButton("Synkroniser Vejman data");
+                }
+            } else {
+                enableButton("Synkroniser Vejman data");
+            }
+        })
+        .catch(error => {
+            console.error('Fejl ved hentning af sidste synkroniseringstid:', error);
+            enableButton("Synkroniser Vejman data");
+        });
+    }
+
+    // Start countdown when button is pressed
+    function startCooldown(seconds) {
+        let button = document.getElementById('resetTriggerBtn');
+        button.disabled = true;
+        button.classList.remove("btn-primary");
+        button.classList.add("btn-warning");
+        button.innerText = "Synkronisering igangsat, vent " + Math.ceil(seconds / 60) + " minutter";
+
+        let interval = setInterval(() => {
+            seconds--;
+            let minutes = Math.ceil(seconds / 60);
+            document.getElementById("remaining-time").innerText = minutes;
+
+            if (seconds <= 0) {
+                clearInterval(interval);
+                enableButton("Synkroniser Vejman data");
+            }
+        }, 1000);
+    }
+
+    // Enable button and set correct text/color
+    function enableButton(text) {
+        let button = document.getElementById('resetTriggerBtn');
+        button.disabled = false;
+        button.classList.remove("btn-warning");
+        button.classList.add("btn-primary");
+        button.innerText = text;
+    }
 
     // Initial calculation on page load
     $('tbody tr').each(function() {
@@ -265,6 +347,7 @@ $(document).ready(function() {
     });
     calculateTotalSum(); // Calculate the initial total sum
 });
+
 </script>
 
 
@@ -286,9 +369,23 @@ $(document).ready(function() {
         <a href="/til-fakturering" class="{% if active_page == 'til-fakturering' %}active{% endif %}">Til Fakturering</a> | 
         <a href="/faktureret" class="{% if active_page == 'faktureret' %}active{% endif %}">Faktureret</a> | 
         <!-- <a href="/add" class="{% if active_page == 'add' %}active{% endif %}">Tilføj faktura</a> | -->
-        <a href="/indstillinger" class="{% if active_page == 'indstillinger' %}active{% endif %}">Indstillinger</a>
+        <a href="/indstillinger" class="{% if active_page == 'indstillinger' %}active{% endif %}">Indstillinger</a>  
     </nav>
 
     {% include 'table.html' %}
+
+    <p>Vejman data sidst opdateret: {{ last_sync }}</p>
+
+    <button id="resetTriggerBtn" 
+            class="btn {% if disable_button %}btn-warning{% else %}btn-primary{% endif %}" 
+            {% if disable_button %}disabled{% endif %}>
+        {% if disable_button %}
+            Synkronisering igangsat, vent <span id="remaining-time">{{ remaining_minutes }}</span> minutter
+        {% else %}
+            Synkroniser Vejman data
+        {% endif %}
+    </button>
+
+        
 </body>
 </html>
