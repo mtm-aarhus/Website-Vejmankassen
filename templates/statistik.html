@@ -1,0 +1,597 @@
+{% extends "common.html" %}
+
+{% block extra_head %}
+<style>
+  .filters .form-label { font-weight: 600; }
+
+  /* Cards */
+  .stat-card .stat { font-weight: 800; line-height: 1; }
+  .stat-card.stat-main .stat { font-size: 2.2rem; text-align: center; }
+  .stat-card .label { opacity: .75; display: block; text-align: center; }
+
+  /* Four cards in one row on wide screens */
+  @media (min-width: 1200px) { .stat-col { flex: 0 0 25%; max-width: 25%; } }
+
+  /* Charts (a bit larger) */
+  .chart-container { position: relative; height: 320px; }
+  .chart-legend-bottom { margin-top: .5rem; }
+
+  /* Compact metric tables + alignment:
+     - first column left, numeric columns right */
+  .metric-table th:first-child,
+  .metric-table td:first-child { text-align: left !important; }
+  .metric-table th:not(:first-child),
+  .metric-table td:not(:first-child) { text-align: right; }
+  .metric-table td, .metric-table th { padding: .375rem .5rem; }
+
+  /* KPI card layout: title (top), value (center), legend (bottom) */
+.stat-card.stat-main .card-body{
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:space-between;
+  text-align:center;
+  min-height:160px; /* keeps a nice vertical rhythm */
+}
+.stat-title{
+  font-weight:600;
+  font-size:1.1rem;
+}
+.stat-legend{
+  opacity:.75;
+  font-size:.875rem;
+}
+
+</style>
+{% endblock %}
+
+{% block content %}
+
+<!-- Filters (one row on xl: 2 * 6 = 12) -->
+<div class="mb-3">
+  <div class="row g-2 filters">
+    <div class="col-12 col-md-6 col-xl-2">
+      <label class="form-label">Status</label>
+      <div class="dropdown w-100">
+        <button class="btn btn-outline-secondary w-100 text-start dropdown-toggle"
+                type="button" data-bs-toggle="dropdown" data-bs-auto-close="outside"
+                aria-expanded="false" id="statusDropdownBtn">Vælg status</button>
+        <div class="dropdown-menu p-2 w-100" style="max-height: 320px; overflow:auto;">
+          <div class="form-check"><input class="form-check-input status-check" type="checkbox" value="faktureret" id="st1"><label class="form-check-label" for="st1">Faktureret</label></div>
+          <div class="form-check"><input class="form-check-input status-check" type="checkbox" value="ikke_faktureret" id="st2"><label class="form-check-label" for="st2">Ikke faktureret</label></div>
+          <div class="form-check"><input class="form-check-input status-check" type="checkbox" value="sendt_til_fakturering" id="st3"><label class="form-check-label" for="st3">Sendt til fakturering</label></div>
+          <div class="form-check"><input class="form-check-input status-check" type="checkbox" value="under_fakturering" id="st4"><label class="form-check-label" for="st4">Under fakturering</label></div>
+          <div class="form-check"><input class="form-check-input status-check" type="checkbox" value="fakturer_ikke" id="st5"><label class="form-check-label" for="st5">Fakturer ikke</label></div>
+          <div class="mt-2 d-flex gap-2">
+            <button class="btn btn-sm btn-secondary" id="statusClear" type="button">Ryd</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Type multi-select: loaded ONCE from /api/statistik/types -->
+    <div class="col-12 col-md-6 col-xl-2">
+      <label class="form-label">Type</label>
+      <div class="dropdown w-100">
+        <button class="btn btn-outline-secondary w-100 text-start dropdown-toggle"
+                type="button" data-bs-toggle="dropdown" data-bs-auto-close="outside"
+                aria-expanded="false" id="typeDropdownBtn">Vælg typer</button>
+        <div class="dropdown-menu p-2 w-100" id="typeDropdownMenu" style="max-height: 320px; overflow:auto;">
+          <!-- checkboxes injected once at load -->
+          <div class="mt-2 d-flex gap-2">
+            <button class="btn btn-sm btn-secondary" id="typeClear" type="button">Ryd</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Dates -->
+    <div class="col-6 col-md-3 col-xl-2">
+      <label class="form-label">Startdato fra</label>
+      <input type="date" class="form-control" id="start_from">
+    </div>
+    <div class="col-6 col-md-3 col-xl-2">
+      <label class="form-label">Startdato til</label>
+      <input type="date" class="form-control" id="start_to">
+    </div>
+    <div class="col-6 col-md-3 col-xl-2">
+      <label class="form-label">Slutdato fra</label>
+      <input type="date" class="form-control" id="slut_from">
+    </div>
+    <div class="col-6 col-md-3 col-xl-2">
+      <label class="form-label">Slutdato til</label>
+      <input type="date" class="form-control" id="slut_to">
+    </div>
+  </div>
+</div>
+
+<!-- Four top cards -->
+<div class="row g-3 mb-3">
+  <div class="col-12 col-md-6 stat-col">
+    <div class="card stat-card stat-main h-100">
+      <div class="card-body">
+        <div class="stat-title">Samlet pris</div>
+        <div class="stat" id="stat-totalpris">0 DKK</div>
+        <div class="stat-legend">(beregnet ud fra valgte filtre)</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12 col-md-6 stat-col">
+    <div class="card stat-card stat-main h-100">
+      <div class="card-body">
+        <div class="stat-title">Fakturalinjer</div>
+        <div class="stat" id="stat-rows">0</div>
+        <div class="stat-legend">(beregnet ud fra valgte filtre)</div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- Status breakdown (3 columns, first col left) -->
+  <div class="col-12 col-md-6 stat-col">
+    <div class="card stat-card h-100"><div class="card-body">
+      <table class="table table-sm mb-0 metric-table">
+        <thead>
+          <tr><th>Status</th><th>Fakturalinjer</th><th>Pris (DKK)</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Faktureret</td><td id="st_cnt_faktureret">0</td><td id="st_sum_faktureret">0</td></tr>
+          <tr><td>Ikke faktureret</td><td id="st_cnt_ikke">0</td><td id="st_sum_ikke">0</td></tr>
+          <tr><td>Sendt til fakturering</td><td id="st_cnt_sendt">0</td><td id="st_sum_sendt">0</td></tr>
+          <tr><td>Under fakturering</td><td id="st_cnt_under">0</td><td id="st_sum_under">0</td></tr>
+          <tr><td>Fakturer ikke</td><td id="st_cnt_nej">0</td><td id="st_sum_nej">0</td></tr>
+        </tbody>
+      </table>
+    </div></div>
+  </div>
+
+  <!-- Averages KPI (first col left) -->
+  <div class="col-12 col-md-6 stat-col">
+    <div class="card stat-card h-100"><div class="card-body">
+      <table class="table table-sm mb-0 metric-table">
+        <tbody>
+          <tr><td>Gns. meter</td><td id="avg-meter">0</td></tr>
+          <tr><td>Gns. pris</td><td id="avg-pris">0 DKK</td></tr>
+          <tr><td>Gns. dage</td><td id="avg-dage">0</td></tr>
+        </tbody>
+      </table>
+    </div></div>
+  </div>
+</div>
+
+<!-- Per-type charts (each in own card, 50/50 on md+) -->
+<div class="row g-3 mb-3">
+  <div class="col-12 col-md-6">
+    <div class="card h-100">
+      <div class="card-body">
+        <h6 class="mb-2">Beløb (DKK)</h6>
+        <div class="chart-container"><canvas id="chartMoney"></canvas></div>
+      </div>
+    </div>
+  </div>
+  <div class="col-12 col-md-6">
+    <div class="card h-100">
+      <div class="card-body">
+        <h6 class="mb-2">Antal fakturalinjer</h6>
+        <div class="chart-container"><canvas id="chartCount"></canvas></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Data table -->
+<div class="table-responsive">
+    <!-- Toolbar (left side of table header) -->
+    <div id="stat-toolbar" class="mb-2">
+    <a class="btn btn-primary" href="{{ url_for('statistik_export_csv') }}">
+        <i class="bi bi-download me-1"></i> Download alle fakturalinjer (ignorerer filtre)
+    </a>
+    </div>
+
+  <table
+    id="stat-table"
+    class="table table-striped table-bordered align-middle"
+    data-toggle="table"
+    data-search="true"
+    data-pagination="true"
+    data-side-pagination="server"
+    data-url="{{ url_for('statistik_data') }}"
+    data-page-size="10"
+    data-page-list="[10, 25, 50, 100]"
+    data-sort-name="Ansøger"
+    data-sort-order="asc"
+    data-total-field="total"
+    data-data-field="rows"
+    data-unique-id="ID"
+    data-query-params="statQueryParams"
+    data-toolbar="#stat-toolbar">
+    <thead>
+    <tr>
+      <th data-field="Ansøger" data-sortable="true">Ansøger</th>
+      <th data-field="Adresse" data-sortable="true">Adresse</th>
+      <th data-field="Tilladelsesnr" data-formatter="linkFormatter" data-sortable="true">Tilladelse</th>
+      <th data-field="CvrNr" data-sortable="true">CVR</th>
+      <th data-field="TilladelsesType" data-sortable="true">Type</th>
+      <th data-field="Enhedspris" data-sortable="true">Enhed</th>
+      <th data-field="Meter" data-sortable="true">Meter</th>
+      <th data-field="Startdato" data-sortable="true">Startdato</th>
+      <th data-field="Slutdato" data-sortable="true">Slutdato</th>
+      <th data-field="AntalDage" data-sortable="true">Dage</th>
+      <th data-field="TotalPris" data-sortable="true">Pris</th>
+    </tr>
+    </thead>
+  </table>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script src="{{ url_for('static', filename='vendor/chartjs/chart.umd.min.js') }}"></script>
+<script>
+
+  // Filters -> server params
+  function getSelectedStatuses() {
+    return Array.from(document.querySelectorAll('.status-check:checked')).map(el => el.value).join(',');
+  }
+  function getSelectedTypes() {
+    return Array.from(document.querySelectorAll('.type-check:checked')).map(el => el.value).join(',');
+  }
+  function statQueryParams(params) {
+    params.statuses   = getSelectedStatuses();
+    params.types      = getSelectedTypes();
+    params.start_from = document.getElementById('start_from').value || '';
+    params.start_to   = document.getElementById('start_to').value   || '';
+    params.slut_from  = document.getElementById('slut_from').value  || '';
+    params.slut_to    = document.getElementById('slut_to').value    || '';
+    return params;
+  }
+
+  // Refresh helpers
+  function refreshAll() {
+    $('#stat-table').bootstrapTable('refresh', {pageNumber: 1});
+    fetchMetrics();
+  }
+  function debounce(fn, ms) { let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a), ms); }; }
+  const refreshDebounced = debounce(refreshAll, 200);
+
+  function money(n) {
+    try { return (parseFloat(n||0)).toLocaleString('da-DK', {minimumFractionDigits: 0, maximumFractionDigits: 2}); }
+    catch { return n; }
+  }
+
+  // ---------- THEME + COLOR HELPERS (Bootstrap CSS variables only) ----------
+  function bsVar(name) {
+    return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  }
+  function currentThemeColors() {
+    return {
+      text:        bsVar('--bs-body-color') || '#111',
+      bodyBg:      bsVar('--bs-body-bg')    || '#fff',
+      cardBg:      bsVar('--bs-card-bg')    || bsVar('--bs-body-bg') || '#fff',
+      tooltipBg:   bsVar('--bs-body-bg')    || '#fff',
+      tooltipText: bsVar('--bs-body-color') || '#111'
+    };
+  }
+  function isDarkMode() {
+    return (document.documentElement.getAttribute('data-bs-theme') || '').toLowerCase() === 'dark';
+  }
+  // Real background behind a canvas (handles cards vs body)
+  function getCanvasBg(canvas) {
+    const c = currentThemeColors();
+    const card = canvas.closest('.card');
+    const bg = getComputedStyle(card || document.body).backgroundColor;
+    return bg || c.cardBg;
+  }
+
+  // ---- Color parsing & HSL helpers (to generate brand-adjacent variants) ----
+  function clamp(v, min, max){ return Math.min(max, Math.max(min, v)); }
+  function cssToRgb(str) {
+    str = (str || '').trim();
+    if (!str) return null;
+    // hex #rrggbb or #rgb
+    if (str[0] === '#') {
+      let hex = str.slice(1);
+      if (hex.length === 3) hex = hex.split('').map(c => c + c).join('');
+      const int = parseInt(hex, 16);
+      if (Number.isNaN(int) || hex.length !== 6) return null;
+      return { r: (int >> 16) & 255, g: (int >> 8) & 255, b: int & 255 };
+    }
+    // rgb/rgba()
+    const m = str.match(/rgba?\(([^)]+)\)/i);
+    if (m) {
+      const parts = m[1].split(',').map(s => s.trim());
+      if (parts.length >= 3) {
+        return { r: parseFloat(parts[0]), g: parseFloat(parts[1]), b: parseFloat(parts[2]) };
+      }
+    }
+    return null;
+  }
+  function rgbToHsl({r,g,b}) {
+    r/=255; g/=255; b/=255;
+    const max = Math.max(r,g,b), min = Math.min(r,g,b);
+    let h, s, l = (max + min) / 2;
+    if (max === min) { h = s = 0; }
+    else {
+      const d = max - min;
+      s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+      switch (max) {
+        case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+        case g: h = (b - r) / d + 2; break;
+        default: h = (r - g) / d + 4;
+      }
+      h /= 6;
+    }
+    return { h: h*360, s: s*100, l: l*100 };
+  }
+  function hslToCss(h, s, l) {
+    return `hsl(${Math.round(h)} ${Math.round(s)}% ${Math.round(l)}%)`;
+  }
+
+  // Bootstrap brand list (use what's available in the theme)
+  function getBootstrapBrandColors() {
+    const varNames = [
+      '--bs-primary','--bs-success','--bs-info','--bs-warning','--bs-danger','--bs-secondary',
+      // extra Bootstrap hues if the theme defines them:
+      '--bs-teal','--bs-orange','--bs-purple','--bs-pink','--bs-indigo','--bs-cyan'
+    ];
+    const colors = [];
+    for (const v of varNames) {
+      const c = bsVar(v);
+      if (c) colors.push(c);
+    }
+    // fallback if theme returns nothing (unlikely)
+    if (!colors.length) colors.push('#0d6efd','#198754','#0dcaf0','#ffc107','#dc3545','#6c757d');
+    return colors;
+  }
+
+  // Dynamic Bootstrap-styled extended palette:
+  // Start from brand colors; if you need more, create gentle hue/light tweaks
+  function makeBootstrapPalette(n) {
+    const base = getBootstrapBrandColors();
+    const out = [];
+    const dark = isDarkMode();
+    const baseHsl = base.map(c => {
+      const rgb = cssToRgb(c);
+      return rgb ? rgbToHsl(rgb) : {h: 210, s: 70, l: dark ? 60 : 45};
+    });
+
+    for (let i = 0; i < n; i++) {
+      if (i < base.length) {
+        out.push(base[i]);
+        continue;
+      }
+      const ref = baseHsl[i % baseHsl.length];
+      const k = Math.floor(i / baseHsl.length) + 1;     // which "ring" of variants we’re on
+      const hueShift = (i % 2 === 0 ? 12 : -12) * k;    // alternate left/right around the brand hue
+      const lightShift = (dark ? +6 : -6) * ((k-1) % 3 + 1); // slightly lighter in dark, darker in light
+      const satShift = (k % 2 === 0 ? -5 : +0);         // subtle saturation tweak occasionally
+
+      const h = (ref.h + hueShift + 360) % 360;
+      const s = clamp(ref.s + satShift, 40, 85);
+      const l = clamp(ref.l + lightShift, 30, dark ? 75 : 65);
+
+      out.push(hslToCss(h, s, l));
+    }
+    return out;
+  }
+
+  function applyChartTheme() {
+    const c = currentThemeColors();
+    Chart.defaults.color = c.text;
+    Chart.defaults.plugins.legend.labels.color = c.text;
+    Chart.defaults.plugins.tooltip.backgroundColor = c.tooltipBg;
+    Chart.defaults.plugins.tooltip.titleColor = c.tooltipText;
+    Chart.defaults.plugins.tooltip.bodyColor = c.tooltipText;
+  }
+
+  // Doughnut charts
+  let chartMoney, chartCount;
+
+  function renderCharts(types) {
+    const labels    = types.map(t => (t.TilladelsesType || '(ukendt)'));
+    const dataMoney = types.map(t => t.sum);
+    const dataCount = types.map(t => t.count);
+
+    if (chartMoney) chartMoney.destroy();
+    if (chartCount) chartCount.destroy();
+
+    const ctxM = document.getElementById('chartMoney').getContext('2d');
+    const ctxC = document.getElementById('chartCount').getContext('2d');
+
+    // Fix initial (“halo”) by matching border to true background
+    const bgM = getCanvasBg(ctxM.canvas);
+    const bgC = getCanvasBg(ctxC.canvas);
+
+    // Generate as many Bootstrap-styled colors as needed
+    const palette = makeBootstrapPalette(labels.length);
+
+    const tooltipPct = (value, dataset) => {
+      const total = dataset.reduce((a,b)=>a+(+b||0), 0) || 1;
+      return ((value / total) * 100).toFixed(0) + '%';
+    };
+
+    const commonOptions = {
+      responsive: true,
+      maintainAspectRatio: false,
+      cutout: '55%',
+      plugins: { legend: { position: 'bottom' } }
+    };
+
+    chartMoney = new Chart(ctxM, {
+      type: 'doughnut',
+      data: {
+        labels,
+        datasets: [{
+          data: dataMoney,
+          backgroundColor: palette,
+          borderColor: bgM, hoverBorderColor: bgM, borderWidth: 2
+        }]
+      },
+      options: {
+        ...commonOptions,
+        plugins: {
+          ...commonOptions.plugins,
+          tooltip: {
+            callbacks: {
+              label: (ctx) => {
+                const v = +ctx.raw || 0;
+                const pct = tooltipPct(v, ctx.dataset.data);
+                return `${ctx.label}: ${money(v)} DKK (${pct})`;
+              }
+            }
+          }
+        }
+      }
+    });
+
+    chartCount = new Chart(ctxC, {
+      type: 'doughnut',
+      data: {
+        labels,
+        datasets: [{
+          data: dataCount,
+          backgroundColor: palette,
+          borderColor: bgC, hoverBorderColor: bgC, borderWidth: 2
+        }]
+      },
+      options: {
+        ...commonOptions,
+        plugins: {
+          ...commonOptions.plugins,
+          tooltip: {
+            callbacks: {
+              label: (ctx) => {
+                const v = +ctx.raw || 0;
+                const pct = tooltipPct(v, ctx.dataset.data);
+                return `${ctx.label}: ${v.toLocaleString('da-DK')} fakturalinjer (${pct})`;
+              }
+            }
+          }
+        }
+      }
+    });
+  }
+
+  function fetchMetrics() {
+    const qs = new URLSearchParams({
+      statuses:  getSelectedStatuses(),
+      types:     getSelectedTypes(),
+      start_from: document.getElementById('start_from').value || '',
+      start_to:   document.getElementById('start_to').value   || '',
+      slut_from:  document.getElementById('slut_from').value  || '',
+      slut_to:    document.getElementById('slut_to').value    || '',
+      search:     $('.search-input').val() || ''
+    }).toString();
+
+    fetch('/api/statistik/metrics?' + qs)
+      .then(r => r.json())
+      .then(setMetrics)
+      .catch(err => console.error(err));
+  }
+
+  function setMetrics(m) {
+    // Top cards
+    document.getElementById('stat-totalpris').textContent = money(m.totals.total_pris) + ' DKK';
+    document.getElementById('stat-rows').textContent = (m.totals.row_count || 0).toLocaleString('da-DK');
+
+    const s = m.status;
+    document.getElementById('st_cnt_faktureret').textContent = s.faktureret.count.toLocaleString('da-DK');
+    document.getElementById('st_sum_faktureret').textContent = money(s.faktureret.sum);
+    document.getElementById('st_cnt_ikke').textContent       = s.ikke_faktureret.count.toLocaleString('da-DK');
+    document.getElementById('st_sum_ikke').textContent       = money(s.ikke_faktureret.sum);
+    document.getElementById('st_cnt_sendt').textContent      = s.sendt_til_fakturering.count.toLocaleString('da-DK');
+    document.getElementById('st_sum_sendt').textContent      = money(s.sendt_til_fakturering.sum);
+    document.getElementById('st_cnt_under').textContent      = s.under_fakturering.count.toLocaleString('da-DK');
+    document.getElementById('st_sum_under').textContent      = money(s.under_fakturering.sum);
+    document.getElementById('st_cnt_nej').textContent        = s.fakturer_ikke.count.toLocaleString('da-DK');
+    document.getElementById('st_sum_nej').textContent        = money(s.fakturer_ikke.sum);
+
+    // Averages
+    const n = Math.max(1, m.totals.row_count || 0);
+    const avgMeter = (m.totals.sum_meter || 0) / n;
+    const avgPris  = (m.totals.total_pris || 0) / n;
+    const avgDage  = (m.totals.sum_dage || 0) / n;
+    document.getElementById('avg-meter').textContent = money(avgMeter);
+    document.getElementById('avg-pris').textContent  = money(avgPris) + ' DKK';
+    document.getElementById('avg-dage').textContent  = money(avgDage);
+
+    // Charts
+    applyChartTheme();
+    renderCharts(m.types);
+  }
+
+  // --- ONE-TIME load of all Types (prevents shrinking list) ---
+  function initTypeDropdown() {
+    const menu = document.getElementById('typeDropdownMenu');
+    fetch('/api/statistik/types')
+      .then(r => r.json())
+      .then(list => {
+        // Rebuild (keep footer buttons)
+        menu.innerHTML = '';
+        list.forEach((label, idx) => {
+          const id = 'tp_' + idx;
+          const wrap = document.createElement('div');
+          wrap.className = 'form-check';
+          wrap.innerHTML = `
+            <input class="form-check-input type-check" type="checkbox" value="${(label||'').replace(/"/g,'&quot;')}" id="${id}">
+            <label class="form-check-label" for="${id}">${label || '(ukendt)'}</label>
+          `;
+          menu.appendChild(wrap);
+        });
+        const footerNode = document.createElement('div');
+        footerNode.className = 'mt-2 d-flex gap-2';
+        footerNode.innerHTML = `
+          <button class="btn btn-sm btn-secondary" id="typeClear" type="button">Ryd</button>
+        `;
+        menu.appendChild(footerNode);
+
+        // Bindings
+        menu.querySelectorAll('.type-check').forEach(cb => cb.addEventListener('change', refreshDebounced));
+        menu.querySelector('#typeClear').addEventListener('click', () => {
+          menu.querySelectorAll('.type-check').forEach(cb => cb.checked = false);
+          refreshDebounced();
+        });
+      })
+      .catch(console.error);
+  }
+
+  // --- Auto-refresh bindings ---
+  document.querySelectorAll('.status-check').forEach(cb => cb.addEventListener('change', refreshDebounced));
+  ['start_from','start_to','slut_from','slut_to'].forEach(id => {
+    document.getElementById(id).addEventListener('change', refreshDebounced);
+  });
+  $(document).on('input', '.search-input', refreshDebounced);
+  document.getElementById('statusClear').addEventListener('click', () => {
+    document.querySelectorAll('.status-check').forEach(cb => { cb.checked = false; });
+    refreshDebounced();
+  });
+
+  // First load
+  $(function() {
+    initTypeDropdown();
+    $('#stat-table').on('load-success.bs.table', function() { fetchMetrics(); });
+    applyChartTheme();
+    fetchMetrics();
+  });
+
+  // Minimal listener: if your page flips data-bs-theme, re-style existing charts.
+  new MutationObserver(() => {
+    applyChartTheme();
+    [chartMoney, chartCount].forEach(ch => {
+      if (!ch) return;
+      const bg = getCanvasBg(ch.ctx.canvas);
+      const palette = makeBootstrapPalette(ch.data.labels.length);
+      ch.options.plugins.legend.labels.color = currentThemeColors().text;
+      ch.data.datasets.forEach(ds => {
+        ds.borderColor = bg;
+        ds.hoverBorderColor = bg;
+        ds.backgroundColor = palette;
+      });
+      ch.update('none');
+    });
+  }).observe(document.documentElement, { attributes: true, attributeFilter: ['data-bs-theme'] });
+</script>
+
+
+{% endblock %}

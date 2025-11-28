@@ -1,0 +1,92 @@
+{% extends "common.html" %}
+<style>
+  .row-highlight { outline: 2px solid rgba(0,0,0,.25); }
+</style>
+
+{% block content %}
+  <div class="table-responsive">
+    <table
+      id="fr-table"
+      class="table table-striped table-bordered align-middle"
+      data-toggle="table"
+      data-pagination="true"
+      data-side-pagination="server"
+      data-search="true"
+      data-url="{{ url_for('faktureret_data') }}"
+      data-page-size="10"
+      data-page-list="[10, 25, 50, 100]"
+      data-sort-name="FakturaDato"
+      data-sort-order="desc"
+      data-total-field="total"
+      data-data-field="rows"
+      data-unique-id="ID">
+      <thead>
+        <tr>
+          <th data-field="ID" data-formatter="reinvoiceFormatter" data-events="reinvoiceEvents" data-switchable="false"></th>
+          <th data-field="Ansøger" data-sortable="true">Ansøger</th>
+          <th data-field="Adresse" data-sortable="true">Adresse</th>
+          <th data-field="Tilladelsesnr" data-formatter="linkFormatter" data-sortable="true">Tilladelse</th>
+          <th data-field="CvrNr" data-sortable="true">CVR</th>
+          <th data-field="TilladelsesType" data-sortable="true">Type</th>
+          <th data-field="Startdato" data-sortable="true">Startdato</th>
+          <th data-field="Slutdato" data-sortable="true">Slutdato</th>
+          <th data-field="TotalPris" data-sortable="true">Pris</th>
+          <th data-field="FakturaDato" data-sortable="true">Faktureret</th>
+          <th data-field="Ordrenummer" data-sortable="true">Ordre nr.</th>
+
+        </tr>
+      </thead>
+    </table>
+  </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+
+
+function reinvoiceFormatter(value, row) {
+  const canEdit = {{ (user_is_admin or user_is_sags) | tojson }};
+
+  return (
+    '<button type="button" class="btn btn-sm btn-danger reinvoice-btn"'
+      + ' data-id="' + row.ID + '"'
+      + ' title="Fakturer igen" aria-label="Fakturer igen"'
+      + (canEdit ? '' : ' disabled')
+      + '>'
+      + '<i class="bi bi-arrow-counterclockwise"></i>'
+    + '</button>'
+  );
+}
+
+  window.reinvoiceEvents = {
+    'click .reinvoice-btn': function (e, value, row) {
+      const $table = $('#fr-table');
+      const $tr = $table.find('tr[data-uniqueid="' + row.ID + '"]');
+
+      $tr.addClass('table-warning row-highlight');
+
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          const ok = confirm('Er du sikker på at du vil fjerne linjen fra faktureret? Sørg for at kreditnota er afsendt før du fjerner den fra faktureret. Hvis du gerne vil lave en ny faktura skal du lave en ny fakturalinje i Vejman på tilladelsen og fjerne \'Faktura sendt\' teksten fra ESDH-journalnr.');
+
+          if (!ok) {
+            $tr.removeClass('table-warning row-highlight');
+            return;
+          }
+
+          fetch('/api/faktureret/fortryd/' + row.ID, { method: 'POST' })
+            .then(r => r.json())
+            .then(json => {
+              if (!json.success) throw new Error(json.error || 'Ukendt fejl');
+              $table.bootstrapTable('removeByUniqueId', row.ID);
+            })
+            .catch(err => {
+              alert('Kunne ikke opdatere: ' + err.message);
+              $tr.removeClass('table-warning row-highlight');
+            });
+        });
+      });
+    }
+  };
+</script>
+{% endblock %}
