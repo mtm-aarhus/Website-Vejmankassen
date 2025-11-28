@@ -1,0 +1,516 @@
+<!doctype html>
+<html lang="da" data-bs-theme="auto">
+<head>
+  <script>
+            (function() {
+                // Check system preference
+                const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+                document.documentElement.setAttribute("data-bs-theme", prefersDark ? "dark" : "light");
+            })();
+            const CAN_EDIT = {{ (user_is_admin or user_is_sags) | tojson }};
+
+  </script>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Vejmankassen – {{ page_title }}</title>
+
+  <link rel="icon" href="{{ url_for('static', filename='favicon-32x32.png') }}" sizes="32x32" type="image/png">
+  <link rel="stylesheet" href="{{ url_for('static', filename='vendor/bootstrap/css/bootstrap.min.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='vendor/bootstrap-table/bootstrap-table.min.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='vendor/bootstrap-icons/bootstrap-icons.min.css') }}">
+
+<style>
+    body { padding: 0; }
+    .navbar-brand img { height: 28px; width: auto; }
+    th:first-child, td:first-child { white-space: nowrap; width: 1%; text-align: center; }
+
+    /* ---------- Title styling ---------- */
+    .navbar-title {
+      font-weight: 700;
+      letter-spacing: .02em;
+      line-height: 1;
+      user-select: none;
+      white-space: nowrap;
+    }
+    [data-bs-theme="light"] .navbar-title { color: #000; }
+    [data-bs-theme="dark"]  .navbar-title { color: #fff; }
+
+    .navbar-title-mobile { font-size: 1.125rem; }
+
+    .navbar-title-desktop {
+      font-size: 1.375rem;
+      font-weight: 700;
+      white-space: nowrap;
+      letter-spacing: .02em;
+      line-height: 1.2;
+    }
+
+    /* ---------- Nav link hover ---------- */
+    .navbar .nav-link { transition: color .2s ease-in-out, opacity .2s ease-in-out; }
+    .navbar .nav-link.active { font-weight: 600; }
+
+    /* ---------- Navbar counters (inline badges) ---------- */
+    .nav-item { position: relative; }
+
+    /* Each menu item must be positioned relative so badge can anchor */
+    .nav-item {
+      position: relative;
+    }
+
+    /* Red notification dot (no number) */
+    .nav-counter {
+      position: absolute;
+      top: 4px;
+      right: -2px;
+
+      width: 8px;
+      height: 8px;
+
+      background: #dc3545;
+      border-radius: 50%;
+      display: inline-block;
+
+      z-index: 20;
+    }
+
+    /* Mobile: keep dot inline and safe */
+    @media (max-width: 991.98px) {
+      .nav-item .nav-counter {
+        position: relative;
+        top: 0;
+        right: 0;
+        margin-left: 6px;
+      }
+
+      /* Add a little right padding so items don't collide */
+      .navbar-nav .nav-link {
+        padding-right: 1rem !important;
+      }
+    }
+
+
+    /* ---------- Bootstrap-table dark fixes ---------- */
+    [data-bs-theme="dark"] .bootstrap-table .fixed-table-container,
+    [data-bs-theme="dark"] .bootstrap-table .fixed-table-body,
+    [data-bs-theme="dark"] .bootstrap-table .fixed-table-loading,
+    [data-bs-theme="dark"] .bootstrap-table .table {
+      background-color: var(--bs-body-bg) !important;
+      color: var(--bs-body-color);
+    }
+
+    [data-bs-theme="dark"] .bootstrap-table .table thead th {
+      background-color: var(--bs-tertiary-bg);
+    }
+
+    [data-bs-theme="dark"] .bootstrap-table .fixed-table-loading {
+      border-color: var(--bs-border-color);
+    }
+
+    .content-wrap { padding: 1rem; }
+
+    /* ---------- Right-side sync group ---------- */
+    @media (min-width: 992px) {
+      .right-actions {
+        display: flex;
+        align-items: center;
+        gap: .75rem;
+        margin-left: auto !important;
+        position: static !important;
+        flex-shrink: 0;
+      }
+      .last-sync-label {
+        font-size: .85rem;
+        color: var(--bs-secondary-color);
+      }
+    }
+
+    /* Hide last sync label on mobile */
+    @media (max-width: 991.98px) {
+      .last-sync-label { display: none; }
+    }
+
+    /* Mobile navbar collapse becomes overlay */
+    @media (max-width: 1199.98px) {
+      #mainNavbar.navbar-collapse {
+        position: absolute;
+        top: 100%;
+        left: 0; right: 0;
+        z-index: 1050;
+        background: var(--bs-body-bg);
+        border-bottom: 1px solid var(--bs-border-color);
+        border-top: 1px solid var(--bs-border-color);
+        padding: .5rem 1rem;
+        box-shadow: 0 .25rem .5rem rgba(0,0,0,.08);
+      }
+
+      #mainNavbar .navbar-nav .nav-link {
+        padding-left: 0;
+      }
+    }
+
+    /* XL+: collapse acts normally */
+    @media (min-width: 1200px) {
+      #mainNavbar.navbar-collapse {
+        position: static;
+        background: transparent;
+        border: 0;
+        box-shadow: none;
+        padding: 0;
+      }
+    }
+
+    /* Full-width bar, no container padding */
+    .footer-bar {
+      width: 100%;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+
+      padding-left: 1rem;
+      padding-right: 1rem;
+    }
+
+    /* Expand to full width left & right */
+    .footer-left {
+      text-align: left;
+    }
+
+    .footer-right {
+      text-align: right;
+    }
+
+    /* Larger logo desktop */
+    .footer-right img {
+      height: 44px;
+      width: auto;
+    }
+
+    /* Smaller on mobile */
+    @media (max-width: 576px) {
+      .footer-right img {
+        height: 34px;
+      }
+    }
+
+
+</style>
+
+
+  {% block extra_head %}{% endblock %}
+</head>
+<body>
+<nav class="navbar navbar-expand-lg bg-body-tertiary border-bottom sticky-top">
+  <div class="container-fluid">
+
+    <!-- LEFT SIDE -->
+    <div class="d-flex align-items-center flex-shrink-0">
+
+      <!-- Mobile toggler -->
+      <button class="navbar-toggler me-2" type="button" data-bs-toggle="collapse"
+              data-bs-target="#mainNavbar" aria-controls="mainNavbar">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+
+      <!-- Mobile title -->
+        <span class="navbar-text navbar-title navbar-title-mobile d-lg-none">
+        Vejmankassen
+      </span>
+            <!-- Title -->
+      <span class="navbar-text navbar-title navbar-title-desktop d-none d-lg-inline mx-3">
+        Vejmankassen
+      </span>
+
+      <!-- Collapsible menu -->
+      <div class="collapse navbar-collapse" id="mainNavbar">
+        <ul class="navbar-nav mb-2 mb-lg-0">
+
+          <li class="nav-item position-relative">
+            <a class="nav-link {% if page_title=='Ikke Faktureret' %}active{% endif %}"
+               href="{{ url_for('ikkefaktureret_page') }}">
+              <i class="bi bi-file-earmark-plus me-1"></i>
+              Nye fakturalinjer
+              <span id="navCountNew" class="nav-counter d-none"></span>
+            </a>
+          </li>
+
+          <li class="nav-item">
+            <a class="nav-link {% if page_title=='Til fakturering' %}active{% endif %}"
+               href="{{ url_for('til_fakturering_page') }}">
+              <i class="bi bi-send-check me-1"></i>Til fakturering
+            </a>
+          </li>
+
+          <li class="nav-item position-relative">
+            <a class="nav-link {% if page_title=='Konflikter' %}active{% endif %}"
+               href="{{ url_for('konflikter_page') }}">
+              <i class="bi bi-exclamation-diamond me-1"></i>
+              Konflikter
+              <span id="navCountIssues" class="nav-counter d-none"></span>
+            </a>
+          </li>
+
+          <li class="nav-item">
+            <a class="nav-link {% if page_title=='Faktureret' %}active{% endif %}"
+               href="{{ url_for('faktureret_page') }}">
+              <i class="bi bi-receipt me-1"></i>Faktureret
+            </a>
+          </li>
+
+          <li class="nav-item">
+            <a class="nav-link {% if page_title=='Statistik' %}active{% endif %}"
+               href="{{ url_for('statistik_page') }}">
+              <i class="bi bi-graph-up me-1"></i>Statistik
+            </a>
+          </li>
+
+        </ul>
+      </div>
+
+    </div><!-- END LEFT SIDE -->
+
+    <!-- RIGHT SIDE -->
+    <div class="d-flex align-items-center flex-shrink-0">
+
+    <span id="lastSyncLabel"
+          class="last-sync-label me-2"
+          title="Sidste synkroniseringstidspunkt">
+      <i class="bi bi-clock-history me-1"></i>
+      <span id="lastSyncText">{{ last_sync }}</span>
+    </span>
+
+      <button id="resetTriggerBtn" class="btn btn-sm btn-primary d-none d-lg-inline-flex" type="button">
+        <i class="bi bi-arrow-repeat me-1"></i>
+        <span id="resetBtnText">Synkroniser</span>
+      </button>
+
+      <!-- Mobile compact button -->
+      <button id="resetTriggerBtnMobile" class="btn btn-sm btn-primary d-inline d-lg-none ms-2" type="button">
+        <i class="bi bi-arrow-repeat"></i>
+      </button>
+
+    </div><!-- END RIGHT SIDE -->
+
+  </div>
+</nav>
+
+
+  <div class="content-wrap">
+    {% block content %}{% endblock %}
+  </div>
+
+  <script src="{{ url_for('static', filename='vendor/jquery/jquery.min.js') }}"></script>
+  <script src="{{ url_for('static', filename='vendor/bootstrap/js/bootstrap.bundle.min.js') }}"></script>
+  <script src="{{ url_for('static', filename='vendor/bootstrap-table/bootstrap-table.min.js') }}"></script>
+
+  <script>
+    // Respect OS theme; control colors via [data-bs-theme] CSS above
+    (function() {
+      const mql = window.matchMedia('(prefers-color-scheme: dark)');
+      const apply = () => document.documentElement.setAttribute('data-bs-theme', mql.matches ? 'dark' : 'light');
+      apply();
+      mql.addEventListener('change', apply);
+    })();
+
+    $.extend($.fn.bootstrapTable.defaults, {
+        formatAllRows: function () { return 'Alle'; },
+        formatLoadingMessage: function () { return 'Indlæser, vent venligst...'; },
+        formatSearch: function () { return 'Søg'; },
+        formatShowingRows: function (pageFrom, pageTo, totalRows, totalNotFiltered) {
+          return 'Viser ' + pageFrom + ' til ' + pageTo + ' ud af ' + totalRows + ' linjer.';
+        },
+        formatRecordsPerPage: function (pageNumber) { return pageNumber + '&nbsp; pr. side'; },
+        formatNoMatches: function () { return 'Ingen fakturalinjer fundet'; }
+    });
+  </script>
+  <script>
+  (function () {
+    const COOLDOWN_SEC = 1800; // 5 minutes
+    let interval = null;
+
+    function enableButton(text) {
+      const d = document.getElementById('resetTriggerBtn');
+      const m = document.getElementById('resetTriggerBtnMobile');
+      [d, m].forEach(btn => {
+        if (!btn) return;
+        btn.disabled = false;
+        btn.classList.remove('btn-warning');
+        btn.classList.add('btn-primary');
+        btn.innerHTML = (btn === d)
+          ? '<i class="bi bi-arrow-repeat me-1"></i><span id="resetBtnText">' + (text || 'Synkroniser') + '</span>'
+          : '<i class="bi bi-arrow-repeat"></i>';
+      });
+    }
+
+    function startCooldown(seconds) {
+      let remaining = Math.max(0, Math.ceil(seconds));
+      const d = document.getElementById('resetTriggerBtn');
+      const m = document.getElementById('resetTriggerBtnMobile');
+
+      [d, m].forEach(btn => {
+        if (!btn) return;
+        btn.disabled = true;
+        btn.classList.remove('btn-primary');
+        btn.classList.add('btn-warning');
+        const label = Math.ceil(remaining / 60) + ' min';
+        btn.innerHTML = (btn === d)
+          ? '<i class="bi bi-hourglass-split me-1"></i>' + label
+          : '<i class="bi bi-hourglass-split"></i>';
+      });
+
+      if (interval) clearInterval(interval);
+      interval = setInterval(() => {
+        remaining -= 1;
+        const label = Math.ceil(remaining / 60) + ' min';
+        [d, m].forEach(btn => {
+          if (!btn) return;
+          btn.innerHTML = (btn === d)
+            ? '<i class="bi bi-hourglass-split me-1"></i>' + label
+            : '<i class="bi bi-hourglass-split"></i>';
+        });
+        if (remaining <= 0) {
+          clearInterval(interval);
+          enableButton('Synkroniser');
+        }
+      }, 1000);
+    }
+
+    function checkLastButtonPress() {
+      fetch('/get_last_button_press', { cache: 'no-store' })
+        .then(r => r.json())
+        .then(data => {
+          if (data.timestamp) {
+            const lastPress = new Date(data.timestamp);
+            const now = new Date();
+            const diffSec = (now - lastPress) / 1000;
+            if (diffSec < COOLDOWN_SEC) {
+              startCooldown(COOLDOWN_SEC - diffSec);
+            } else {
+              enableButton('Synkroniser');
+            }
+          } else {
+            enableButton('Synkroniser');
+          }
+        })
+        .catch(() => enableButton('Synkroniser'));
+    }
+
+    function triggerSync() {
+      const d = document.getElementById('resetTriggerBtn');
+      const m = document.getElementById('resetTriggerBtnMobile');
+      [d, m].forEach(btn => { if (btn) btn.disabled = true; });
+
+      fetch('/reset_trigger', { method: 'POST', headers: { 'Content-Type': 'application/json' } })
+        .then(async r => {
+          const body = await r.json().catch(() => ({}));
+          if (r.ok && body.success) {
+            startCooldown(COOLDOWN_SEC);
+          } else {
+            // If blocked, estimate remaining from message if present
+            enableButton('Synkroniser');
+            if (body && body.message) alert(body.message);
+            else alert('Kunne ikke igangsætte synkronisering.');
+          }
+        })
+        .catch(() => enableButton('Synkroniser'));
+    }
+
+    document.addEventListener('DOMContentLoaded', function () {
+      const d = document.getElementById('resetTriggerBtn');
+      const m = document.getElementById('resetTriggerBtnMobile');
+      if (d) d.addEventListener('click', triggerSync);
+      if (m) m.addEventListener('click', triggerSync);
+      checkLastButtonPress(); // initialize on every page load
+    });
+  })();
+
+    function linkFormatter(value, row) {
+      if (!value) return '';
+      const caseId = row && row.VejmanID ? row.VejmanID : '';
+      const href = caseId
+        ? 'https://vejman.vd.dk/permissions/update.jsp?caseid=' + caseId
+        : 'https://aarhus.mspace.giantleap.no/parking/tab/1';
+      return '<a href="' + href + '" target="_blank">' + value + '</a>';
+    }
+  </script>
+
+  <footer class="footer-bar border-top pt-3 pb-3 text-muted small">
+
+    <!-- LEFT SIDE -->
+    <div class="footer-left">
+      {% if user %}
+        <div class="mb-2">
+          <span>Bruger: </span>
+          <span class="fw-semibold">{{ user.name }}</span>
+          <span class="text-secondary">({{ user.email }})</span>
+        </div>
+      {% endif %}
+      <button class="btn btn-outline-secondary btn-sm" id="refreshPermissionsBtn">
+        <i class="bi bi-arrow-clockwise"></i> Opdater rettigheder
+      </button>
+    </div>
+
+    <!-- RIGHT SIDE -->
+    <div class="footer-right">
+      <picture>
+        <source srcset="{{ url_for('static', filename='aak-logo-dark.svg') }}"
+                media="(prefers-color-scheme: dark)">
+        <img src="{{ url_for('static', filename='aak-logo.svg') }}" alt="AAK Logo">
+      </picture>
+    </div>
+
+  </footer>
+
+
+  <script>
+document.addEventListener("DOMContentLoaded", function () {
+    const btn = document.getElementById("refreshPermissionsBtn");
+    if (btn) {
+        btn.addEventListener("click", function () {
+            // Log the user out → triggers new login → refreshes roles
+            window.location.href = "/logout";
+        });
+    }
+});
+
+document.addEventListener("DOMContentLoaded", function () {
+
+    function updateNavCounts() {
+        fetch('/api/nav_counts', { cache: 'no-store' })
+            .then(r => r.json())
+            .then(data => {
+                const newRows = data.new_rows ?? 0;
+                const openIssues = data.open_issues ?? 0;
+
+                const elNew = document.getElementById('navCountNew');
+                const elIssues = document.getElementById('navCountIssues');
+
+                // NEW rows counter
+                if (elNew) {
+                    if (newRows > 0) {
+                        elNew.classList.remove('d-none');
+                    } else {
+                        elNew.classList.add('d-none');
+                    }
+                }
+
+                // ISSUES counter
+                if (elIssues) {
+                    if (openIssues > 0) {
+                        elIssues.classList.remove('d-none');
+                    } else {
+                        elIssues.classList.add('d-none');
+                    }
+                }
+            })
+            .catch(err => console.warn("Count load failed:", err));
+    }
+
+    updateNavCounts();            // Load immediately
+    setInterval(updateNavCounts, 300000);  // Refresh every 30 sec
+
+});
+</script>
+
+  {% block extra_js %}{% endblock %}
+</body>
+</html>
