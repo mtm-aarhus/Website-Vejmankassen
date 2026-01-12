@@ -30,7 +30,7 @@ app.config["PREFERRED_URL_SCHEME"] = "https"
 
 last_button_press = None
 conn_str = os.getenv('VejmanKassenSQLTEST')
-#conn_str = os.getenv('VejmanKassenSQL')
+# conn_str = os.getenv('VejmanKassenSQL')
 
 
 engine = create_engine(conn_str, pool_pre_ping=True, pool_size=10, max_overflow=20)
@@ -775,7 +775,7 @@ def api_issues():
     if search:
         where_clauses.append("""
             (
-                v.Tilladelsesnr LIKE :q OR
+                i.TilladelsesNr LIKE :q OR
                 i.IssueType LIKE :q OR
                 i.Fakturalinje LIKE :q OR
                 i.IssueDescription LIKE :q OR
@@ -802,23 +802,20 @@ def api_issues():
 
     # Count total rows
     count_sql = text(f"""
-        SELECT COUNT(*) AS cnt
-        FROM dbo.InvoiceIssues i
-        LEFT JOIN dbo.VejmanFakturering v
-            ON i.InvoiceID = v.VejmanFakturaID
-        {where_sql}
+    SELECT COUNT(*) AS cnt
+    FROM dbo.InvoiceIssues i
+    {where_sql}
     """)
+
 
     # Data query
     data_sql = text(f"""
         SELECT
             i.*,
-            v.VejmanID,
-            v.Tilladelsesnr AS CaseNumber,
+            i.CaseID as VejmanID,
+            i.TilladelsesNr as Tilladelsesnr,
             LEFT(i.CaseworkerEmail, CHARINDEX('@', i.CaseworkerEmail + '@') - 1) AS ShortEmail
         FROM dbo.InvoiceIssues i
-        LEFT JOIN dbo.VejmanFakturering v
-            ON i.InvoiceID = v.VejmanFakturaID
         {where_sql}
         ORDER BY i.UpdatedAt DESC
         OFFSET :offset ROWS
