@@ -424,13 +424,22 @@
   })();
 
     function linkFormatter(value, row) {
-      if (!value) return '';
-      const caseId = row && row.VejmanID ? row.VejmanID : '';
-      const href = caseId
-        ? 'https://vejman.vd.dk/permissions/update.jsp?caseid=' + caseId
-        : 'https://aarhus.mspace.giantleap.no/parking/tab/1';
-      return '<a href="' + href + '" target="_blank">' + value + '</a>';
+    if (!value) return '';
+
+    const pez = row && row.PEZUUID ? String(row.PEZUUID).trim() : '';
+    if (pez) {
+      const href = 'https://pez.giantleap.net/cases/view/' + encodeURIComponent(pez) + '/case';
+      return '<a href="' + href + '" target="_blank" rel="noopener noreferrer">' + value + '</a>';
     }
+
+    // fallback: existing behaviour
+    const caseId = row && row.VejmanID ? String(row.VejmanID).trim() : '';
+    const href = caseId
+      ? 'https://vejman.vd.dk/permissions/update.jsp?caseid=' + encodeURIComponent(caseId)
+      : 'https://aarhus.mspace.giantleap.no/parking/tab/1';
+
+    return '<a href="' + href + '" target="_blank" rel="noopener noreferrer">' + value + '</a>';
+  }
   </script>
 
   <footer class="footer-bar border-top pt-3 pb-3 text-muted small">

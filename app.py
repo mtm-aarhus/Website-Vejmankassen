@@ -29,9 +29,11 @@ app.config.update(
 app.config["PREFERRED_URL_SCHEME"] = "https"
 
 last_button_press = None
-conn_str = os.getenv('VejmanKassenSQLTEST')
-# conn_str = os.getenv('VejmanKassenSQL')
 
+if app.debug:
+    conn_str = os.getenv('VejmanKassenSQLTEST')
+else:
+    conn_str = os.getenv('VejmanKassenSQL')
 
 engine = create_engine(conn_str, pool_pre_ping=True, pool_size=10, max_overflow=20)
 
@@ -43,7 +45,7 @@ def login_required(f):
     def wrapper(*args, **kwargs):
 
         # Development bypass (only active on local dev)
-        if app.debug or app.env == "development":
+        if app.debug:
             if request.host.startswith("127.0.0.1") or request.host.startswith("localhost"):
                 session["user"] = {
                     "email": "test@aarhus.dk",
@@ -266,7 +268,8 @@ def ikkefaktureret_data():
             Slutdato,
             AntalDage,
             TotalPris,
-            FakturaStatus
+            FakturaStatus,
+            PEZUUID
         FROM [dbo].[VejmanFakturering]
         WHERE {base_where} {search_clause}
         ORDER BY {sort_col} {order}
@@ -295,6 +298,7 @@ def ikkefaktureret_data():
             'AntalDage': r['AntalDage'] if r['AntalDage'] is not None else 0,
             'TotalPris': fmt_num(r['TotalPris']),
             'FakturaStatus': r['FakturaStatus'] or '',
+            'PEZUUID': str(r.get('PEZUUID') or ''),
         })
 
     return jsonify({'total': total, 'rows': out})
@@ -356,7 +360,8 @@ def tilfakturering_data():
             Slutdato,
             AntalDage,
             TotalPris,
-            FakturaStatus
+            FakturaStatus,
+            PEZUUID
         FROM [dbo].[VejmanFakturering]
         WHERE {base_where} {search_clause}
         ORDER BY {sort_col} {order}
@@ -385,6 +390,7 @@ def tilfakturering_data():
             'AntalDage': r['AntalDage'] if r['AntalDage'] is not None else 0,
             'TotalPris': fmt_num(r['TotalPris']),
             'FakturaStatus': r['FakturaStatus'] or '',
+            'PEZUUID': str(r.get('PEZUUID') or ''),
         })
 
     return jsonify({'total': total, 'rows': out})
@@ -445,7 +451,8 @@ def faktureret_data():
             Slutdato,
             TotalPris,
             FakturaDato,
-            Ordrenummer
+            Ordrenummer,
+            PEZUUID
         FROM [dbo].[VejmanFakturering]
         WHERE {base_where} {search_clause}
         ORDER BY {sort_col} {order}
@@ -472,6 +479,7 @@ def faktureret_data():
             'TotalPris': fmt_num(r['TotalPris']),
             'FakturaDato': fmt_date(r['FakturaDato']),
             'Ordrenummer': r['Ordrenummer'],
+            'PEZUUID': str(r.get('PEZUUID') or ''),
         })
 
     return jsonify({'total': total, 'rows': out})
@@ -1058,7 +1066,8 @@ def statistik_data():
             Slutdato,
             AntalDage,
             TotalPris,
-            FakturaStatus
+            FakturaStatus,
+            PEZUUID
         FROM [dbo].[VejmanFakturering]
         WHERE {where_all}
         ORDER BY {sort_col} {order}
@@ -1087,6 +1096,7 @@ def statistik_data():
             'AntalDage': r['AntalDage'] if r['AntalDage'] is not None else 0,
             'TotalPris': fmt_num(r['TotalPris']),
             'FakturaStatus': r['FakturaStatus'] or '',
+            'PEZUUID': str(r.get('PEZUUID') or ''),
         })
 
     return jsonify({'total': total, 'rows': out})
