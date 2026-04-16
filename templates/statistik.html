@@ -42,6 +42,56 @@
   font-size:.875rem;
 }
 
+.stat-card .card-body { min-width: 0; }
+
+.metric-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.metric-table {
+  width: 100%;
+  table-layout: fixed;
+}
+
+.metric-table th:first-child,
+.metric-table td:first-child {
+  width: 32%;
+}
+
+.metric-table th:nth-child(2),
+.metric-table td:nth-child(2) {
+  width: 24%;
+}
+
+.metric-table th:nth-child(3),
+.metric-table td:nth-child(3) {
+  width: 44%;
+}
+
+.metric-table th,
+.metric-table td {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Truncate Status + Fakturalinjer */
+.metric-table td:nth-child(1),
+.metric-table th:nth-child(1),
+.metric-table td:nth-child(2),
+.metric-table th:nth-child(2) {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Let Price breathe */
+.metric-table td:nth-child(3),
+.metric-table th:nth-child(3) {
+  white-space: nowrap; /* keep numbers on one line */
+}
+
 </style>
 {% endblock %}
 

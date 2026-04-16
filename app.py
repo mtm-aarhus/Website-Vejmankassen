@@ -205,6 +205,121 @@ def statistik_page():
 def konflikter_page():
     return render_template('konflikter.html', page_title='Konflikter')
 
+@app.route('/tilsyn')
+@login_required
+def tilsyn_page():
+    return render_template('tilsyn.html', page_title='Tilsyn')
+
+@csrf.exempt
+@app.route('/tilsyn/opret', methods=['POST'])
+@login_required
+@role_required("Vejmankassen-Admin", "Vejmankassen-Sagsbehandler")
+def tilsyn_opret():
+    """Proxy endpoint: receives indmeldt-tilsyn data from the browser and
+    forwards it to PyOrchestratorAPI with the server-side API key.
+    Only Admin and Sagsbehandler roles may create."""
+    user = session.get("user", {})
+
+    data = request.get_json(force=True)
+    email = user.get("email", "")
+    initials = email.split("@")[0].upper() if email else "UNKNOWN"
+
+    api_key = os.getenv("PyOrchestratorAPIKey")
+    if not api_key:
+        return jsonify({"error": "API-nøgle mangler i miljøvariabler"}), 500
+
+    payload = {
+        "full_address": data.get("full_address"),
+        "street_name": data.get("street_name"),
+        "latitude": data.get("latitude"),
+        "longitude": data.get("longitude"),
+        "title": data.get("title"),
+        "description": data.get("description"),
+        "created_by": initials,
+        "created_by_source": "vejmankassen",
+    }
+
+    try:
+        resp = requests.post(
+            "https://pyorchestrator.aarhuskommune.dk/api/tilsyn/indmeldt",
+            json=payload,
+            headers={"X-API-Key": api_key, "Content-Type": "application/json"},
+            timeout=15,
+        )
+        return jsonify(resp.json()), resp.status_code
+    except requests.exceptions.RequestException as e:
+        return jsonify({"error": f"Netværksfejl: {str(e)}"}), 500
+
+@csrf.exempt
+@app.route('/tilsyn/inspicer', methods=['POST'])
+@login_required
+@role_required("Vejmankassen-Admin", "Vejmankassen-Sagsbehandler")
+def tilsyn_inspicer():
+    """Proxy: forward an inspect/hide action to PyOrchestratorAPI."""
+    data = request.get_json(force=True)
+    user = session.get("user", {})
+    email = user.get("email", "")
+
+    api_key = os.getenv("PyOrchestratorAPIKey")
+    if not api_key:
+        return jsonify({"error": "API-n\u00f8gle mangler"}), 500
+
+    payload = {
+        "id": data.get("id"),
+        "inspector_email": email,
+        "comment": data.get("comment"),
+        "updates": data.get("updates", {}),
+    }
+
+    try:
+        resp = requests.post(
+            "https://pyorchestrator.aarhuskommune.dk/api/tilsyn/inspect",
+            json=payload,
+            headers={"X-API-Key": api_key, "Content-Type": "application/json"},
+            timeout=15,
+        )
+        return jsonify(resp.json()), resp.status_code
+    except requests.exceptions.RequestException as e:
+        return jsonify({"error": f"Netv\u00e6rksfejl: {str(e)}"}), 500
+
+@app.route('/tilsyn/data')
+@login_required
+def tilsyn_data():
+    """Proxy: fetch all tilsyn tasks + history from PyOrchestratorAPI and
+    return the combined list filtered to type=indmeldt."""
+    api_key = os.getenv("PyOrchestratorAPIKey")
+    if not api_key:
+        return jsonify({"error": "API-nøgle mangler"}), 500
+
+    base = "https://pyorchestrator.aarhuskommune.dk/api"
+    headers = {"X-API-Key": api_key}
+    items = []
+
+    try:
+        # Active (not yet inspected)
+        r1 = requests.get(f"{base}/tilsyn/tasks", headers=headers, timeout=15)
+        if r1.ok:
+            items += [i for i in r1.json() if i.get("type") == "indmeldt"]
+
+        # History (inspected / hidden)
+        r2 = requests.get(f"{base}/tilsyn/history", headers=headers, timeout=15)
+        if r2.ok:
+            items += [i for i in r2.json() if i.get("type") == "indmeldt"]
+
+        # Deduplicate by id (an item could appear in both if race)
+        seen = set()
+        unique = []
+        for i in items:
+            if i["id"] not in seen:
+                seen.add(i["id"])
+                unique.append(i)
+
+        # Sort newest-created first
+        unique.sort(key=lambda x: x.get("created_at") or "", reverse=True)
+        return jsonify(unique)
+    except requests.exceptions.RequestException as e:
+        return jsonify({"error": f"Netværksfejl: {str(e)}"}), 500
+
 # ------------------------- API: Lists -------------------------
 
 @app.route('/api/ikkefaktureret')

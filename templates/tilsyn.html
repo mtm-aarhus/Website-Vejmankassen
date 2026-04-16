@@ -1,0 +1,752 @@
+{% extends "common.html" %}
+
+{% block extra_head %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+<style>
+  #tilsynMap { height: 55vh; min-height: 350px; border-radius: .5rem; }
+  .dawa-list { list-style: none; padding: 0; margin: 0; max-height: 260px; overflow-y: auto; }
+  .dawa-list li { padding: .55rem .75rem; cursor: pointer; border-bottom: 1px solid var(--bs-border-color); }
+  .dawa-list li:hover { background: var(--bs-tertiary-bg); }
+  .map-address-card {
+    position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%);
+    z-index: 1000; width: min(92%, 440px);
+  }
+
+  /* Tilsyn cards */
+  .tilsyn-card { transition: box-shadow .15s; }
+  .tilsyn-card .card-body { cursor: pointer; }
+  .tilsyn-card:hover { box-shadow: 0 .25rem .75rem rgba(0,0,0,.12); }
+  .tilsyn-badge-aktiv  { background-color: var(--bs-primary); color: #fff; }
+  .tilsyn-badge-done   { background-color: #198754; color: #fff; }
+  .tilsyn-badge-hidden { background-color: #6c757d; color: #fff; }
+
+  .inspection-entry {
+    border-left: 3px solid var(--bs-primary);
+    padding: .35rem .5rem;
+    margin-bottom: .35rem;
+    border-radius: 0 .25rem .25rem 0;
+    background: var(--bs-tertiary-bg);
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<script>const CAN_CREATE = {{ (user_is_admin or user_is_sags) | tojson }};</script>
+
+<div class="row g-3">
+
+  <!-- LEFT: Map -->
+  <div class="col-lg-7">
+    <div class="position-relative">
+      <div class="position-absolute top-0 start-0 end-0 p-2" style="z-index:1000;">
+        <div class="position-relative">
+          <input id="addressSearch" type="text" class="form-control"
+                 placeholder="Søg efter adresse i Aarhus Kommune eller klik på kortet" autocomplete="off">
+          <div id="suggestionsWrap" class="card shadow d-none position-absolute w-100 mt-1" style="z-index:1001;">
+            <ul id="suggestionsList" class="dawa-list"></ul>
+          </div>
+        </div>
+      </div>
+
+      <div id="tilsynMap"></div>
+
+      <div id="addressCard" class="map-address-card d-none">
+        <div class="card shadow">
+          <div class="card-body py-2 px-3">
+            <div class="d-flex justify-content-between align-items-start">
+              <div>
+                <strong id="cardAddress" class="d-block">-</strong>
+                <small id="cardCoords" class="text-muted">-</small>
+              </div>
+              <button class="btn-close ms-2" id="cardClose" aria-label="Luk"></button>
+            </div>
+            <button class="btn btn-sm btn-primary w-100 mt-2" id="cardOpretBtn" disabled>Opret tilsyn</button>
+            <small id="roleHint" class="text-muted d-none mt-1 d-block text-center">
+              Kun sagsbehandlere/admins kan oprette
+            </small>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- RIGHT: Form -->
+  <div class="col-lg-5">
+    <div class="card h-100">
+      <div class="card-body">
+        <h5 class="card-title mb-3"><i class="bi bi-clipboard-check me-1"></i>Opret indmeldt tilsyn</h5>
+
+        <div id="formPlaceholder">
+          <p class="text-muted mb-0">
+            <i class="bi bi-geo-alt me-1"></i>
+            Klik på kortet eller fremsøg en adresse hvis du vil oprette et tilsyn. Dit indmeldte tilsyn bliver meldt ind i AAK Tilsyn app'en, og inspiceres hurtigst muligt af en tilsynsførende i nærheden.
+          </p>
+        </div>
+
+        <div id="formFields" class="d-none">
+          <div class="mb-2">
+            <label class="form-label fw-semibold mb-1">Adresse</label>
+            <div id="formAddress" class="form-control-plaintext border rounded px-2 py-1 small" style="background:var(--bs-tertiary-bg);">-</div>
+          </div>
+          <div class="mb-2">
+            <label class="form-label fw-semibold mb-1">Koordinater</label>
+            <div id="formCoords" class="form-control-plaintext border rounded px-2 py-1 small" style="background:var(--bs-tertiary-bg);">-</div>
+          </div>
+          <div class="mb-2">
+            <label for="titleInput" class="form-label fw-semibold mb-1">Titel <span class="text-danger">*</span></label>
+            <input id="titleInput" type="text" class="form-control" maxlength="50" placeholder="Kort beskrivende titel">
+            <div class="form-text text-end"><span id="titleCount">0</span> / 50</div>
+          </div>
+          <div class="mb-3">
+            <label for="descInput" class="form-label fw-semibold mb-1">Beskrivelse <span class="text-muted">(valgfri)</span></label>
+            <textarea id="descInput" class="form-control" rows="3" maxlength="2000" placeholder="Uddybende beskrivelse..."></textarea>
+          </div>
+          <button id="submitBtn" class="btn btn-primary w-100" disabled>
+            <span id="submitText">Opret tilsyn</span>
+            <span id="submitSpinner" class="spinner-border spinner-border-sm d-none ms-1"></span>
+          </button>
+          <div id="resultMsg" class="mt-2"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Tilsyn list -->
+<div class="card mt-3">
+  <div class="card-body">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+      <h5 class="card-title mb-0"><i class="bi bi-list-check me-1"></i>Indmeldte tilsyn</h5>
+      <div class="d-flex gap-2 align-items-center">
+        <input id="tableSearch" type="text" class="form-control form-control-sm"
+               placeholder="Søg..." style="width:200px;">
+        <button class="btn btn-sm btn-outline-secondary" id="refreshTableBtn" title="Opdater">
+          <i class="bi bi-arrow-clockwise"></i>
+        </button>
+      </div>
+    </div>
+    <!-- Filter chips -->
+    <div class="d-flex flex-wrap gap-2 mb-3" id="filterChips">
+      <button class="btn btn-sm btn-primary filter-chip active" data-filter="aktiv">Aktiv</button>
+      <button class="btn btn-sm btn-outline-success filter-chip active" data-filter="inspiceret">Inspiceret</button>
+      <button class="btn btn-sm btn-outline-secondary filter-chip" data-filter="skjult">Skjult</button>
+    </div>
+    <div id="tilsynList">
+      <div class="text-center text-muted py-4">
+        <span class="spinner-border spinner-border-sm me-1"></span>Indlæser...
+      </div>
+    </div>
+    <!-- Pagination -->
+    <nav id="paginationNav" class="d-none mt-3">
+      <div class="d-flex justify-content-between align-items-center">
+        <small id="pageInfo" class="text-muted"></small>
+        <div class="btn-group btn-group-sm">
+          <button class="btn btn-outline-secondary" id="prevPageBtn" disabled>&laquo; Forrige</button>
+          <button class="btn btn-outline-secondary" id="nextPageBtn" disabled>Næste &raquo;</button>
+        </div>
+      </div>
+    </nav>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script>
+(function () {
+  const AARHUS_KOMMUNEKODE = '0751';
+  const DAWA = 'https://api.dataforsyningen.dk';
+
+  let clickLat = null, clickLon = null;
+  let selectedAddress = null, selectedStreet = null;
+  let mapMarker = null;
+
+  // ---- Map (zoom → bottomright to avoid search overlap) ----
+  const map = L.map('tilsynMap', { zoomControl: false }).setView([56.1567, 10.2108], 14);
+  L.control.zoom({ position: 'bottomright' }).addTo(map);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19, attribution: '\u00a9 OpenStreetMap'
+  }).addTo(map);
+
+  // Marker for "click to create" flow
+  const newIcon = L.divIcon({
+    className: '',
+    html: '<div style="width:22px;height:22px;border-radius:50%;background:#0d6efd;border:3px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.4);"></div>',
+    iconSize: [22, 22], iconAnchor: [11, 11],
+  });
+  function placeMarker(lat, lng) {
+    if (mapMarker) map.removeLayer(mapMarker);
+    mapMarker = L.marker([lat, lng], { icon: newIcon }).addTo(map);
+  }
+
+  // Existing tilsyn markers layer
+  var tilsynMarkersLayer = L.layerGroup().addTo(map);
+
+  function makeDotIcon(color) {
+    return L.divIcon({
+      className: '',
+      html: '<div style="width:16px;height:16px;border-radius:50%;background:' + color + ';border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.35);"></div>',
+      iconSize: [16, 16], iconAnchor: [8, 8],
+    });
+  }
+  var iconAktiv      = makeDotIcon('#0d6efd');
+  var iconInspiceret = makeDotIcon('#198754');
+  var iconSkjult     = makeDotIcon('#6c757d');
+
+  function plotTilsynMarkers(items) {
+    tilsynMarkersLayer.clearLayers();
+    items.forEach(function (it) {
+      if (!it.latitude || !it.longitude) return;
+      var icon = it.hidden === true ? iconSkjult
+               : it.last_inspected_at ? iconInspiceret
+               : iconAktiv;
+      var m = L.marker([it.latitude, it.longitude], { icon: icon });
+      m.bindTooltip(it.title || it.case_number || '', { direction: 'top', offset: [0, -10] });
+      m.on('click', function (e) {
+        L.DomEvent.stopPropagation(e);
+        focusTilsyn(it.id);
+      });
+      tilsynMarkersLayer.addLayer(m);
+    });
+  }
+
+  // ---- Address card ----
+  const $card = document.getElementById('addressCard');
+  const $cardAddr = document.getElementById('cardAddress');
+  const $cardCo = document.getElementById('cardCoords');
+  const $cardBtn = document.getElementById('cardOpretBtn');
+  const $cardX = document.getElementById('cardClose');
+  const $roleHint = document.getElementById('roleHint');
+
+  function showCard(address, lat, lng, resolved) {
+    $cardAddr.textContent = address;
+    $cardCo.textContent = 'Koordinater: ' + lat.toFixed(5) + ', ' + lng.toFixed(5);
+    $cardBtn.disabled = !(resolved && CAN_CREATE);
+    if (resolved && !CAN_CREATE) $roleHint.classList.remove('d-none');
+    else $roleHint.classList.add('d-none');
+    $card.classList.remove('d-none');
+    $cardAddr.classList.toggle('text-danger', !resolved);
+  }
+  function hideCard() {
+    $card.classList.add('d-none');
+    clickLat = clickLon = null;
+    selectedAddress = selectedStreet = null;
+    if (mapMarker) { map.removeLayer(mapMarker); mapMarker = null; }
+  }
+  $cardX.addEventListener('click', function () { hideCard(); hideForm(); });
+
+  // ---- Form ----
+  const $placeholder = document.getElementById('formPlaceholder');
+  const $fields = document.getElementById('formFields');
+  const $formAddr = document.getElementById('formAddress');
+  const $formCoords = document.getElementById('formCoords');
+  const $title = document.getElementById('titleInput');
+  const $desc = document.getElementById('descInput');
+  const $submit = document.getElementById('submitBtn');
+  const $submitText = document.getElementById('submitText');
+  const $submitSpin = document.getElementById('submitSpinner');
+  const $titleCount = document.getElementById('titleCount');
+  const $resultMsg = document.getElementById('resultMsg');
+
+  function showForm() {
+    $formAddr.textContent = selectedAddress || '-';
+    $formCoords.textContent = clickLat.toFixed(5) + ', ' + clickLon.toFixed(5);
+    $title.value = ''; $desc.value = ''; $titleCount.textContent = '0';
+    $resultMsg.innerHTML = '';
+    $submitText.textContent = 'Opret tilsyn';
+    $submitSpin.classList.add('d-none');
+    $placeholder.classList.add('d-none');
+    $fields.classList.remove('d-none');
+    $submit.disabled = true;
+    $title.focus();
+  }
+  function hideForm() {
+    $fields.classList.add('d-none');
+    $placeholder.classList.remove('d-none');
+  }
+  $cardBtn.addEventListener('click', showForm);
+  $title.addEventListener('input', function () {
+    $titleCount.textContent = $title.value.length;
+    $submit.disabled = $title.value.trim().length === 0;
+  });
+
+  // ---- Submit ----
+  $submit.addEventListener('click', function () {
+    if (!clickLat || !clickLon || !$title.value.trim()) return;
+    $submit.disabled = true;
+    $submitText.textContent = 'Opretter\u2026';
+    $submitSpin.classList.remove('d-none');
+
+    fetch('/tilsyn/opret', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        full_address: selectedAddress || 'Ukendt adresse',
+        street_name: selectedStreet || null,
+        latitude: clickLat, longitude: clickLon,
+        title: $title.value.trim(),
+        description: $desc.value.trim() || null,
+      })
+    })
+    .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
+    .then(function (res) {
+      $submitSpin.classList.add('d-none');
+      if (res.ok && res.data.status === 'success') {
+        $resultMsg.innerHTML = '<div class="alert alert-success py-1 px-2 small mb-0">'
+          + '<i class="bi bi-check-circle me-1"></i>Oprettet! Sagsnummer: <strong>' + res.data.case_number + '</strong></div>';
+        $submit.disabled = true;
+        $submitText.textContent = 'Oprettet';
+        setTimeout(function () { hideCard(); hideForm(); loadTilsyn(); }, 2000);
+      } else {
+        $resultMsg.innerHTML = '<div class="alert alert-danger py-1 px-2 small mb-0">'
+          + '<i class="bi bi-x-circle me-1"></i>' + (res.data.error || 'Ukendt fejl') + '</div>';
+        $submitText.textContent = 'Opret tilsyn';
+        $submit.disabled = false;
+      }
+    })
+    .catch(function () {
+      $submitSpin.classList.add('d-none');
+      $submitText.textContent = 'Opret tilsyn';
+      $submit.disabled = false;
+      $resultMsg.innerHTML = '<div class="alert alert-danger py-1 px-2 small mb-0">Netv\u00e6rksfejl</div>';
+    });
+  });
+
+  // ---- Map click ----
+  map.on('click', function (e) {
+    var lat = e.latlng.lat, lng = e.latlng.lng;
+    clickLat = lat; clickLon = lng;
+    placeMarker(lat, lng);
+    showCard('Henter adresse\u2026', lat, lng, false);
+
+    fetch(DAWA + '/adgangsadresser/reverse?x=' + lng + '&y=' + lat + '&struktur=flad')
+      .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+      .then(function (d) {
+        if (d.kommunekode !== AARHUS_KOMMUNEKODE) {
+          selectedAddress = null; selectedStreet = null;
+          showCard('Uden for Aarhus Kommune', lat, lng, false);
+          return;
+        }
+        var vej = d.vejnavn || '', nr = d.husnr || '', pnr = d.postnr || '', pnavn = d.postnrnavn || '';
+        selectedAddress = (vej + ' ' + nr + ', ' + pnr + ' ' + pnavn).replace(/\s+/g, ' ').trim();
+        selectedStreet = vej;
+        showCard(selectedAddress, lat, lng, true);
+      })
+      .catch(function () {
+        selectedAddress = null; selectedStreet = null;
+        showCard('Kunne ikke hente adresse', lat, lng, false);
+      });
+  });
+
+  // ---- DAWA autocomplete ----
+  var $search = document.getElementById('addressSearch');
+  var $sugWrap = document.getElementById('suggestionsWrap');
+  var $sugList = document.getElementById('suggestionsList');
+  var debounce = null;
+
+  $search.addEventListener('input', function () {
+    clearTimeout(debounce);
+    var q = $search.value.trim();
+    if (q.length < 3) { $sugWrap.classList.add('d-none'); return; }
+    debounce = setTimeout(function () {
+      fetch(DAWA + '/adresser/autocomplete?q=' + encodeURIComponent(q) + '&per_side=8&kommunekode=' + AARHUS_KOMMUNEKODE)
+        .then(function (r) { return r.json(); })
+        .then(function (items) {
+          $sugList.innerHTML = '';
+          if (!items.length) { $sugWrap.classList.add('d-none'); return; }
+          items.forEach(function (s) {
+            var li = document.createElement('li');
+            li.innerHTML = '<i class="bi bi-geo-alt text-primary me-1"></i>' + s.tekst;
+            li.addEventListener('click', function () {
+              var a = s.adresse;
+              var vej = a.vejnavn || '', nr = a.husnr || '', pnr = a.postnr || '', pnavn = a.postnrnavn || '';
+              clickLat = a.y; clickLon = a.x;
+              selectedAddress = (vej + ' ' + nr + ', ' + pnr + ' ' + pnavn).replace(/\s+/g, ' ').trim();
+              selectedStreet = vej;
+              placeMarker(a.y, a.x);
+              map.setView([a.y, a.x], 17);
+              showCard(selectedAddress, a.y, a.x, true);
+              $sugWrap.classList.add('d-none');
+              $search.value = s.tekst;
+            });
+            $sugList.appendChild(li);
+          });
+          $sugWrap.classList.remove('d-none');
+        })
+        .catch(function () { $sugWrap.classList.add('d-none'); });
+    }, 250);
+  });
+
+  document.addEventListener('click', function (e) {
+    if (!$sugWrap.contains(e.target) && e.target !== $search) $sugWrap.classList.add('d-none');
+  });
+
+  // ==================================================================
+  //  TILSYN LIST (card-based with filters + inspect/hide)
+  // ==================================================================
+  var $list = document.getElementById('tilsynList');
+  var $tSearch = document.getElementById('tableSearch');
+  var allItems = [];
+
+  // ---- Filter chips ----
+  var activeFilters = { aktiv: true, inspiceret: true, skjult: false };
+  document.querySelectorAll('.filter-chip').forEach(function (chip) {
+    // Set initial visual state
+    var f = chip.dataset.filter;
+    if (activeFilters[f]) chip.classList.add('active');
+    else chip.classList.remove('active');
+
+    chip.addEventListener('click', function (e) {
+      e.preventDefault();
+      activeFilters[f] = !activeFilters[f];
+      chip.classList.toggle('active');
+      // Swap outline ↔ filled for visual feedback
+      if (f === 'aktiv') {
+        chip.className = activeFilters[f]
+          ? 'btn btn-sm btn-primary filter-chip active'
+          : 'btn btn-sm btn-outline-primary filter-chip';
+      } else if (f === 'inspiceret') {
+        chip.className = activeFilters[f]
+          ? 'btn btn-sm btn-success filter-chip active'
+          : 'btn btn-sm btn-outline-success filter-chip';
+      } else {
+        chip.className = activeFilters[f]
+          ? 'btn btn-sm btn-secondary filter-chip active'
+          : 'btn btn-sm btn-outline-secondary filter-chip';
+      }
+      applyFilter();
+    });
+  });
+
+  function itemStatus(it) {
+    if (it.hidden === true) return 'skjult';
+    if (it.last_inspected_at) return 'inspiceret';
+    return 'aktiv';
+  }
+
+  // ---- Helpers ----
+  function esc(s) {
+    var d = document.createElement('div');
+    d.textContent = s;
+    return d.innerHTML;
+  }
+
+  function fmtDate(raw) {
+    if (!raw) return '\u2013';
+    try {
+      var d = new Date(raw);
+      if (isNaN(d)) return raw;
+      var pad = function (n) { return String(n).padStart(2, '0'); };
+      return pad(d.getDate()) + '-' + pad(d.getMonth() + 1) + '-' + d.getFullYear()
+        + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+    } catch (_) { return raw; }
+  }
+
+  function statusBadge(item) {
+    var s = itemStatus(item);
+    if (s === 'skjult')      return '<span class="badge tilsyn-badge-hidden">Skjult</span>';
+    if (s === 'inspiceret')  return '<span class="badge tilsyn-badge-done">Inspiceret</span>';
+    return '<span class="badge tilsyn-badge-aktiv">Aktiv</span>';
+  }
+
+  function renderInspections(inspections) {
+    if (!inspections || !inspections.length)
+      return '<span class="text-muted fst-italic">Ingen tilsyn endnu</span>';
+    return inspections.slice().reverse().map(function (r) {
+      var who = (r.inspector_email || '').split('@')[0].toUpperCase() || '?';
+      var when = fmtDate(r.inspected_at);
+      var comment = r.comment ? '<div class="text-muted">' + esc(r.comment) + '</div>' : '';
+      var hiddenBadge = r.hidden === true ? ' <span class="badge bg-secondary">skjult</span>' : '';
+      return '<div class="inspection-entry">'
+        + '<div class="d-flex justify-content-between"><strong>' + esc(who) + '</strong><small class="text-muted">' + when + '</small></div>'
+        + hiddenBadge + comment
+        + '</div>';
+    }).join('');
+  }
+
+  // ---- Inspect / Hide actions ----
+  function doInspect(id, comment, btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+    fetch('/tilsyn/inspicer', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: id, comment: comment || null, updates: {} })
+    })
+    .then(function (r) { return r.json(); })
+    .then(function (d) {
+      if (d.status === 'success') loadTilsyn();
+      else alert(d.error || 'Fejl ved inspektion');
+    })
+    .catch(function () { alert('Netv\u00e6rksfejl'); })
+    .finally(function () { btn.disabled = false; btn.textContent = 'Gem tilsyn'; });
+  }
+
+  function doToggleHide(id, hide, btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+    fetch('/tilsyn/inspicer', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id: id,
+        comment: hide ? 'Skjult fra Vejmankassen' : 'Gendannet fra Vejmankassen',
+        updates: { hidden: hide }
+      })
+    })
+    .then(function (r) { return r.json(); })
+    .then(function (d) {
+      if (d.status === 'success') loadTilsyn();
+      else alert(d.error || 'Fejl');
+    })
+    .catch(function () { alert('Netv\u00e6rksfejl'); });
+  }
+
+  // ---- Render ----
+  function renderList(items) {
+    if (!items.length) {
+      $list.innerHTML = '<div class="text-center text-muted py-4">Ingen indmeldte tilsyn fundet</div>';
+      return;
+    }
+
+    $list.innerHTML = items.map(function (it, idx) {
+      var isHidden = it.hidden === true;
+      var chevron = '<i class="bi bi-chevron-down small"></i>';
+
+      // Action buttons (only for privileged users)
+      var actions = '';
+      if (CAN_CREATE) {
+        var commentId = 'comment-' + idx;
+        var hideLabel = isHidden ? 'Gendan' : 'Skjul';
+        var hideIcon  = isHidden ? 'bi-eye' : 'bi-eye-slash';
+        var hideClass = isHidden ? 'btn-outline-success' : 'btn-outline-danger';
+
+        actions = ''
+          + '<div class="border-top pt-2 mt-2">'
+          + '  <div class="d-flex flex-wrap gap-2 align-items-end">'
+          + '    <div class="flex-grow-1">'
+          + '      <label class="form-label small mb-1">Kommentar</label>'
+          + '      <input type="text" class="form-control form-control-sm" id="' + commentId + '" '
+          + '             placeholder="Skriv en kommentar\u2026">'
+          + '    </div>'
+          + '    <button class="btn btn-sm btn-primary inspect-btn" data-id="' + esc(it.id) + '" data-comment="' + commentId + '">'
+          + '      <i class="bi bi-check-circle me-1"></i>Gem tilsyn'
+          + '    </button>'
+          + '    <button class="btn btn-sm ' + hideClass + ' hide-btn" '
+          + '            data-id="' + esc(it.id) + '" data-hide="' + (!isHidden) + '">'
+          + '      <i class="bi ' + hideIcon + ' me-1"></i>' + hideLabel
+          + '    </button>'
+          + '  </div>'
+          + '</div>';
+      }
+
+      return ''
+        + '<div class="card tilsyn-card mb-2" data-idx="' + idx + '">'
+        + '  <div class="card-body py-2 px-3">'
+        + '    <div class="d-flex justify-content-between align-items-center mb-1">'
+        + '      <span class="fw-bold text-primary">' + esc(it.case_number || '\u2013') + '</span>'
+        + '      ' + statusBadge(it)
+        + '    </div>'
+        + '    <div class="fw-semibold">' + esc(it.title || '\u2013') + '</div>'
+        + '    <div class="d-flex flex-wrap gap-2 text-muted small mt-1">'
+        + '      <span><i class="bi bi-geo-alt me-1"></i>' + esc(it.full_address || '\u2013') + '</span>'
+        + '      <span class="ms-auto"><i class="bi bi-person me-1"></i>' + esc(it.created_by || '\u2013') + '</span>'
+        + '      <span><i class="bi bi-clock me-1"></i>' + fmtDate(it.created_at) + '</span>'
+        + '    </div>'
+        + '    <div class="text-center mt-1 expand-chevron" style="opacity:.4;">' + chevron + '</div>'
+        + '  </div>'
+        + '  <div class="collapse" id="detail-' + idx + '">'
+        + '    <div class="card-footer bg-body-secondary small">'
+        + '      <div class="row g-2">'
+        + '        <div class="col-md-6">'
+        + '          <div class="mb-2"><strong>Beskrivelse:</strong><br>' + esc(it.description || 'Ingen') + '</div>'
+        + '          <div><strong>Koordinater:</strong> '
+        +              (it.latitude ? it.latitude.toFixed(5) + ', ' + it.longitude.toFixed(5) : '\u2013') + '</div>'
+        + '        </div>'
+        + '        <div class="col-md-6">'
+        + '          <div class="mb-1"><strong>Tilsynshistorik:</strong></div>'
+        + '          ' + renderInspections(it.inspections)
+        + '        </div>'
+        + '      </div>'
+        +        actions
+        + '    </div>'
+        + '  </div>'
+        + '</div>';
+    }).join('');
+
+    // Toggle expand (only on the header area, not action buttons)
+    $list.querySelectorAll('.tilsyn-card .card-body').forEach(function (header) {
+      header.addEventListener('click', function () {
+        var card = header.closest('.tilsyn-card');
+        var detail = document.getElementById('detail-' + card.dataset.idx);
+        if (!detail) return;
+        var isOpen = detail.classList.contains('show');
+        // Close all others
+        $list.querySelectorAll('.collapse.show').forEach(function (el) {
+          el.classList.remove('show');
+          var pc = el.closest('.tilsyn-card');
+          if (pc) { var ch = pc.querySelector('.expand-chevron i'); if (ch) ch.className = 'bi bi-chevron-down small'; }
+        });
+        if (!isOpen) {
+          detail.classList.add('show');
+          var ch = card.querySelector('.expand-chevron i');
+          if (ch) ch.className = 'bi bi-chevron-up small';
+        }
+      });
+    });
+
+    // Wire up action buttons (stop event propagation so clicking doesn't toggle the card)
+    $list.querySelectorAll('.inspect-btn').forEach(function (btn) {
+      btn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        var commentEl = document.getElementById(btn.dataset.comment);
+        doInspect(btn.dataset.id, commentEl ? commentEl.value.trim() : '', btn);
+      });
+    });
+    $list.querySelectorAll('.hide-btn').forEach(function (btn) {
+      btn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        doToggleHide(btn.dataset.id, btn.dataset.hide === 'true', btn);
+      });
+    });
+    // Stop propagation on comment inputs too
+    $list.querySelectorAll('input[id^="comment-"]').forEach(function (inp) {
+      inp.addEventListener('click', function (e) { e.stopPropagation(); });
+    });
+  }
+
+  // ---- Pagination ----
+  var PAGE_SIZE = 10;
+  var currentPage = 0;
+  var filteredItems = [];
+
+  var $pageNav  = document.getElementById('paginationNav');
+  var $pageInfo = document.getElementById('pageInfo');
+  var $prevBtn  = document.getElementById('prevPageBtn');
+  var $nextBtn  = document.getElementById('nextPageBtn');
+
+  $prevBtn.addEventListener('click', function () { if (currentPage > 0) { currentPage--; renderPage(); } });
+  $nextBtn.addEventListener('click', function () {
+    if ((currentPage + 1) * PAGE_SIZE < filteredItems.length) { currentPage++; renderPage(); }
+  });
+
+  function renderPage() {
+    var start = currentPage * PAGE_SIZE;
+    var pageItems = filteredItems.slice(start, start + PAGE_SIZE);
+    renderList(pageItems);
+
+    var totalPages = Math.ceil(filteredItems.length / PAGE_SIZE);
+    if (totalPages <= 1) {
+      $pageNav.classList.add('d-none');
+    } else {
+      $pageNav.classList.remove('d-none');
+      $pageInfo.textContent = 'Side ' + (currentPage + 1) + ' af ' + totalPages
+        + ' (' + filteredItems.length + ' tilsyn i alt)';
+      $prevBtn.disabled = currentPage === 0;
+      $nextBtn.disabled = (currentPage + 1) >= totalPages;
+    }
+  }
+
+  // ---- Load & filter ----
+  function loadTilsyn() {
+    $list.innerHTML = '<div class="text-center text-muted py-4">'
+      + '<span class="spinner-border spinner-border-sm me-1"></span>Indl\u00e6ser\u2026</div>';
+    $pageNav.classList.add('d-none');
+    fetch('/tilsyn/data', { cache: 'no-store' })
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (Array.isArray(data)) {
+          allItems = data;
+          plotTilsynMarkers(allItems);
+          applyFilter();
+        } else {
+          $list.innerHTML = '<div class="text-center text-danger py-4">' + (data.error || 'Ukendt fejl') + '</div>';
+        }
+      })
+      .catch(function () {
+        $list.innerHTML = '<div class="text-center text-danger py-4">Netv\u00e6rksfejl</div>';
+      });
+  }
+
+  function applyFilter() {
+    var q = ($tSearch.value || '').trim().toLowerCase();
+    filteredItems = allItems.filter(function (i) {
+      var s = itemStatus(i);
+      if (!activeFilters[s]) return false;
+      if (q) {
+        return (i.case_number || '').toLowerCase().indexOf(q) !== -1
+            || (i.title || '').toLowerCase().indexOf(q) !== -1
+            || (i.full_address || '').toLowerCase().indexOf(q) !== -1
+            || (i.created_by || '').toLowerCase().indexOf(q) !== -1;
+      }
+      return true;
+    });
+    currentPage = 0;
+    renderPage();
+  }
+
+  // ---- Focus a tilsyn from map marker click ----
+  function focusTilsyn(id) {
+    // Ensure the item's status filter is active so it appears
+    var item = allItems.find(function (i) { return i.id === id; });
+    if (!item) return;
+    var status = itemStatus(item);
+    if (!activeFilters[status]) {
+      // Activate the filter chip
+      activeFilters[status] = true;
+      document.querySelectorAll('.filter-chip').forEach(function (chip) {
+        if (chip.dataset.filter === status) {
+          chip.classList.add('active');
+          if (status === 'aktiv')       chip.className = 'btn btn-sm btn-primary filter-chip active';
+          else if (status === 'inspiceret') chip.className = 'btn btn-sm btn-success filter-chip active';
+          else chip.className = 'btn btn-sm btn-secondary filter-chip active';
+        }
+      });
+    }
+    // Clear text search so the item isn't filtered out
+    $tSearch.value = '';
+    applyFilter();
+
+    // Find page and index
+    var idx = -1;
+    for (var i = 0; i < filteredItems.length; i++) {
+      if (filteredItems[i].id === id) { idx = i; break; }
+    }
+    if (idx === -1) return;
+    currentPage = Math.floor(idx / PAGE_SIZE);
+    renderPage();
+
+    // Expand the card and scroll to it
+    var cardIdx = idx - (currentPage * PAGE_SIZE);
+    setTimeout(function () {
+      var cards = $list.querySelectorAll('.tilsyn-card');
+      if (cards[cardIdx]) {
+        // Close any open detail first
+        $list.querySelectorAll('.collapse.show').forEach(function (el) {
+          el.classList.remove('show');
+          var pc = el.closest('.tilsyn-card');
+          if (pc) { var ch = pc.querySelector('.expand-chevron i'); if (ch) ch.className = 'bi bi-chevron-down small'; }
+        });
+        // Open this card
+        var detail = document.getElementById('detail-' + cardIdx);
+        if (detail) {
+          detail.classList.add('show');
+          var ch = cards[cardIdx].querySelector('.expand-chevron i');
+          if (ch) ch.className = 'bi bi-chevron-up small';
+        }
+        cards[cardIdx].scrollIntoView({ behavior: 'smooth', block: 'center' });
+        // Brief highlight
+        cards[cardIdx].style.outline = '2px solid var(--bs-primary)';
+        setTimeout(function () { cards[cardIdx].style.outline = ''; }, 2000);
+      }
+    }, 100);
+  }
+
+  $tSearch.addEventListener('input', applyFilter);
+  document.getElementById('refreshTableBtn').addEventListener('click', loadTilsyn);
+  loadTilsyn();
+})();
+</script>
+{% endblock %}
